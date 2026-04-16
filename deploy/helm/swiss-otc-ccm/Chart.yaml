@@ -11,5 +11,8 @@ keywords:
   - swiss-otc
   - load-balancer
 maintainers:
-  - name: Maintainer
-    url: https://github.com/your-org
+  - name: SkyNet Labs
+    url: https://github.com/Wolfslight-Forgehouse
+# NOTE: The canonical source for this chart is sotc-cloud-manager.
+# This copy exists for the infra-apply.yml workflow's post-apply step.
+# See: https://github.com/Wolfslight-Forgehouse/sotc-cloud-manager

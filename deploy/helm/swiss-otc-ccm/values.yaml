@@ -1,7 +1,7 @@
 image:
   # Option 1: Container image (for production/CI)
   repository: ghcr.io/wolfslight-forgehouse/swiss-otc-cloud-controller-manager
-  tag: latest
+  tag: "v0.1.0"
   pullPolicy: Always
 
   # Option 2: Host binary (for dev/edge — no image registry needed)

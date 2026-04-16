@@ -51,7 +51,7 @@ ccm:
   enabled: true
   image:
     repository: "ghcr.io/wolfslight-forgehouse/swiss-otc-cloud-controller-manager"
-    tag: "latest"
+    tag: "v0.1.0"
   elb:
     subnetId: ""
     networkId: ""
