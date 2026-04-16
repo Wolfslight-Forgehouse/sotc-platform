@@ -185,6 +185,99 @@ kann keine conflist hineinschreiben.
 **Fix in cloud-init**: `mkdir -p /var/lib/rancher/rke2/agent/etc/cni/net.d` vor RKE2 start.
 Das ist bereits im `compute` Modul (`master-init.sh.tpl`, `worker-init.sh.tpl`) integriert.
 
+### Problem: OVN NBDB/SBDB Ports blockiert (SDE-298)
+
+**Entdeckt**: E2E Re-Test 2026-04-16
+
+**Symptom**:
+```
+kube-ovn-controller log:
+  failed to create OVN NB client: failed to connect to tcp:[10.0.1.x]:6641:
+    failed to open connection: dial tcp 10.0.1.x:6641: i/o timeout
+```
+
+**Root Cause**: Das `sotc-infra/terraform/modules/networking` Modul hat keine Security Group
+Rule für OVN Northbound (TCP 6641) / Southbound (TCP 6642). Ohne diese Rule kann der
+Controller auf Worker-Nodes ovn-central auf dem Master nicht erreichen.
+
+**Fix**: Im `networking` Modul ergänzt — TCP 6641-6642 von VPC CIDR.
+Commit: [03f3883](https://github.com/Wolfslight-Forgehouse/sotc-infra/commit/03f3883)
+
+### ⚠️ WICHTIG: Nodes NotReady trotz laufender Komponenten (SDE-299)
+
+**Entdeckt**: E2E Re-Test 2026-04-16 auf RKE2 v1.34.6+rke2r3 + Kube-OVN v1.13.0
+
+**Symptom**: Alle KubeOVN-Komponenten laufen (`kube-ovn-cni`, `kube-ovn-controller`,
+`ovn-central`, `ovs-ovn` alle `1/1 Running`), Subnets sind erstellt, aber Nodes bleiben
+`NotReady`:
+
+```
+KubeletNotReady: container runtime network not ready:
+  NetworkReady=false reason:NetworkPluginNotReady
+  message:Network plugin returns error: cni plugin not initialized
+```
+
+**Root Cause**: **Die oben im Abschnitt "RKE2-spezifische Helm-Werte" beschriebene Config
+ist für RKE2 v1.34+ FALSCH!** Die Helm-Overrides schreiben die CNI-Conflist in
+`/var/lib/rancher/rke2/agent/etc/cni/net.d`, aber **kubelet in RKE2 v1.34 liest aus
+`/etc/cni/net.d`**. Die conflist wird nicht gefunden.
+
+**Workaround (E2E validiert)**:
+
+Conflist via hostNetwork DaemonSet in den kubelet-Pfad kopieren:
+
+```yaml
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: cni-conf-fix
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels: {name: cni-conf-fix}
+  template:
+    metadata:
+      labels: {name: cni-conf-fix}
+    spec:
+      hostNetwork: true
+      tolerations: [{operator: Exists}]
+      containers:
+        - name: fix
+          image: busybox:1.36
+          command: [sh, -c, "cp /rke2-path/*.conflist /kubelet-path/ && sleep 3600"]
+          securityContext: {privileged: true}
+          volumeMounts:
+            - {name: rke2-cni, mountPath: /rke2-path}
+            - {name: kubelet-cni, mountPath: /kubelet-path}
+      volumes:
+        - name: rke2-cni
+          hostPath:
+            path: /var/lib/rancher/rke2/agent/etc/cni/net.d
+            type: DirectoryOrCreate
+        - name: kubelet-cni
+          hostPath:
+            path: /etc/cni/net.d
+            type: DirectoryOrCreate
+```
+
+**Bessere Fix-Optionen (noch zu testen)**:
+
+1. **Helm-Install ohne CNI_CONF_DIR override** — `/etc/cni/net.d` ist Kubelet-Default:
+   ```bash
+   helm upgrade --install kube-ovn kubeovn/kube-ovn \
+     --namespace kube-system \
+     --version 1.13.0 \
+     --set MASTER_NODES="<master-ip>" \
+     # NO cni_conf.CNI_CONF_DIR override!
+     --set "kubelet_conf.KUBELET_DIR=/var/lib/rancher/rke2/agent/kubelet"
+   ```
+   Das würde auch [SDE-296](https://madcluster.atlassian.net/browse/SDE-296)
+   (volumeMount mismatch) irrelevant machen.
+
+2. **cloud-init Symlink**: `ln -sfn /var/lib/rancher/rke2/agent/etc/cni/net.d /etc/cni/net.d`
+
+Tracking-Ticket: [SDE-299](https://madcluster.atlassian.net/browse/SDE-299)
+
 ## Overlay vs Underlay
 
 | | Overlay (Geneve) | Underlay (OTC VPC) |
@@ -221,9 +314,13 @@ kubectl get nodes --show-labels | grep kube-ovn
 
 ---
 
-## RKE2-spezifische Helm-Werte (KRITISCH!)
+## RKE2-spezifische Helm-Werte
 
-Der wichtigste Fix für produktiven Betrieb:
+> ⚠️ **UPDATE 2026-04-16**: Die unten gelisteten Parameter funktionieren NICHT sauber
+> mit RKE2 v1.34+. Siehe [SDE-299](https://madcluster.atlassian.net/browse/SDE-299) im
+> Abschnitt "Bekannte Bootstrap-Probleme" unten für den aktuell validierten Workaround.
+
+Der historische Vorschlag war:
 
 ```bash
 helm upgrade --install kube-ovn kubeovn/kube-ovn \
@@ -233,9 +330,18 @@ helm upgrade --install kube-ovn kubeovn/kube-ovn \
   --set "cni_conf.CNI_BIN_DIR=/opt/cni/bin"
 ```
 
-**Ohne diese Parameter:** `kube-ovn-cni` bleibt dauerhaft `0/N Running` (Readiness-Probe sucht `/var/lib/kubelet` — existiert in RKE2 nicht).
+**Aktueller Stand (RKE2 v1.34.6):**
+- `KUBELET_DIR` → weiter notwendig (Readiness-Probe)
+- `CNI_CONF_DIR` → kontraproduktiv, weil kubelet aus `/etc/cni/net.d` liest (nicht RKE2-Pfad)
+- `CNI_BIN_DIR` → ok, Standard-Pfad
 
-**Mit diesen Parametern:** CNI in ~2 Min ready, alle nachfolgenden Pods bekommen Netzwerk.
+Die wahrscheinlich korrekte Version (noch in Evaluation):
+
+```bash
+helm upgrade --install kube-ovn kubeovn/kube-ovn \
+  --namespace kube-system \
+  --set "kubelet_conf.KUBELET_DIR=/var/lib/rancher/rke2/agent/kubelet"
+```
 
 ## Verifizierter E2E-Status (2026-04-03)
 
