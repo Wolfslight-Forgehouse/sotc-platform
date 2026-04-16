@@ -203,7 +203,7 @@ Controller auf Worker-Nodes ovn-central auf dem Master nicht erreichen.
 **Fix**: Im `networking` Modul ergänzt — TCP 6641-6642 von VPC CIDR.
 Commit: [03f3883](https://github.com/Wolfslight-Forgehouse/sotc-infra/commit/03f3883)
 
-### ⚠️ WICHTIG: Nodes NotReady trotz laufender Komponenten (SDE-299)
+### ~~⚠️ WICHTIG: Nodes NotReady trotz laufender Komponenten (SDE-299)~~ ✅ GELÖST
 
 **Entdeckt**: E2E Re-Test 2026-04-16 auf RKE2 v1.34.6+rke2r3 + Kube-OVN v1.13.0
 
@@ -222,7 +222,25 @@ ist für RKE2 v1.34+ FALSCH!** Die Helm-Overrides schreiben die CNI-Conflist in
 `/var/lib/rancher/rke2/agent/etc/cni/net.d`, aber **kubelet in RKE2 v1.34 liest aus
 `/etc/cni/net.d`**. Die conflist wird nicht gefunden.
 
-**Workaround (E2E validiert)**:
+**✅ OFFIZIELLER FIX (E2E validiert 2026-04-16, sotc-infra [a0c4e23](https://github.com/Wolfslight-Forgehouse/sotc-infra/commit/a0c4e23))**:
+
+Im cloud-init der kube-ovn Nodes einen Symlink erstellen **vor** RKE2-Start:
+
+```bash
+mkdir -p /etc/cni
+[ -d /etc/cni/net.d ] && [ -z "$(ls -A /etc/cni/net.d 2>/dev/null)" ] && rmdir /etc/cni/net.d
+[ ! -e /etc/cni/net.d ] && ln -sfn /var/lib/rancher/rke2/agent/etc/cni/net.d /etc/cni/net.d
+```
+
+Damit funktionieren beide Pfade gleichzeitig:
+- KubeOVN's install-cni schreibt in den RKE2-Pfad (durch `CNI_CONF_DIR` env)
+- Kubelet liest aus `/etc/cni/net.d` → folgt Symlink → findet die conflist
+
+Integriert im `compute` Modul von `sotc-infra` nur für `cni_plugin = "kube-ovn"`.
+
+---
+
+**Alternativer Workaround (nur für nicht-Terraform-Deployments)**:
 
 Conflist via hostNetwork DaemonSet in den kubelet-Pfad kopieren:
 
