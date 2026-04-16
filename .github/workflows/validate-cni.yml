@@ -1,0 +1,310 @@
+name: Validate CNI (Kube-OVN)
+on:
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup SSH
+        env:
+          SSH_PRIVATE_KEY_B64: ${{ secrets.SSH_PRIVATE_KEY_B64 }}
+          BASTION_IP:      ${{ secrets.BASTION_IP }}
+          MASTER_IP:       ${{ secrets.MASTER_IP }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY_B64" | base64 -d > ~/.ssh/rke2-key
+          chmod 600 ~/.ssh/rke2-key
+
+          # Bastion Host-Key zuverlässig holen (wie Apply Workflow)
+          for i in $(seq 1 6); do
+            ssh-keyscan -T 15 -H "$BASTION_IP" >> ~/.ssh/known_hosts 2>/dev/null && break
+            echo "  ssh-keyscan attempt $i failed, retrying..."
+            sleep 5
+          done
+
+          # SSH Config mit ProxyJump (via printf, YAML-sicher)
+          printf 'Host master\n  HostName %s\n  User ubuntu\n  IdentityFile ~/.ssh/rke2-key\n  StrictHostKeyChecking no\n  ProxyJump ubuntu@%s\n  ConnectTimeout 15\n\nHost %s\n  User ubuntu\n  IdentityFile ~/.ssh/rke2-key\n  StrictHostKeyChecking no\n  ConnectTimeout 15\n' \
+            "$MASTER_IP" "$BASTION_IP" "$BASTION_IP" > ~/.ssh/config
+          chmod 600 ~/.ssh/config
+
+          echo "✅ SSH key fingerprint: $(ssh-keygen -l -f ~/.ssh/rke2-key 2>/dev/null || echo INVALID)"
+          echo "✅ SSH bereit"
+
+      - name: Validate Kube-OVN on Master
+        env:
+          BASTION_IP: ${{ secrets.BASTION_IP }}
+          MASTER_IP:  ${{ secrets.MASTER_IP }}
+        run: |
+          ssh -F ~/.ssh/config master << 'REMOTE'
+          K="sudo /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml --insecure-skip-tls-verify"
+
+          echo "=============================================="
+          echo "  Kube-OVN CNI Validation Report"
+          echo "  $(date)"
+          echo "=============================================="
+
+          echo ""
+          echo "=== Nodes ==="
+          $K get nodes -o wide
+
+          echo ""
+          echo "=== Kube-OVN Pods ==="
+          $K get pods -n kube-system | grep -E "kube-ovn|ovn"
+
+          echo ""
+          echo "=== Kube-OVN Subnets ==="
+          $K get subnet 2>/dev/null || echo "(keine Subnet CRD)"
+
+          echo ""
+          echo "=== Pod-to-Pod Connectivity Test ==="
+          $K run test-a --image=busybox:latest --restart=Never \
+            --command -- sleep 60 2>/dev/null || true
+          $K run test-b --image=busybox:latest --restart=Never \
+            --command -- sleep 60 2>/dev/null || true
+          sleep 12
+
+          IP_B=$($K get pod test-b -o jsonpath='{.status.podIP}' 2>/dev/null || echo "")
+          echo "test-b IP: $IP_B"
+
+          if [ -n "$IP_B" ]; then
+            $K exec test-a -- ping -c3 -W2 "$IP_B" 2>/dev/null && \
+              echo "✅ Pod-to-Pod: OK" || echo "❌ Pod-to-Pod: FAIL"
+          fi
+
+          echo ""
+          echo "=== DNS Test ==="
+          $K exec test-a -- nslookup kubernetes.default 2>/dev/null && \
+            echo "✅ DNS: OK" || echo "❌ DNS: FAIL"
+
+          echo ""
+          echo "=== Services ==="
+          $K get svc -n default
+
+          echo ""
+          echo "=== PVCs ==="
+          $K get pvc -n default
+
+          echo ""
+          echo "=== Cleanup ==="
+          $K delete pod test-a test-b --ignore-not-found 2>/dev/null
+          echo "✅ Done"
+          REMOTE
+
+      - name: Kube-OVN Overlay vs Underlay Summary
+        run: |
+          echo "=============================================="
+          echo "  Overlay (Geneve) vs Underlay — Bewertung"
+          echo "=============================================="
+          echo ""
+          echo "Overlay (aktuell, Geneve):"
+          echo "  ✅ Kein OTC VPC Routing nötig"
+          echo "  ✅ Vollständige Network Policies"
+          echo "  ✅ Einfache Installation"
+          echo "  ⚠️  Leichter MTU-Overhead (~50 bytes)"
+          echo ""
+          echo "Underlay (OTC VPC native):"
+          echo "  ✅ Pods bekommen direkte VPC IPs"
+          echo "  ✅ Kein Overlay-Overhead"
+          echo "  ❌ Braucht OTC Neutron Port-Security Anpassung"
+          echo "  ❌ Aufwändig: Custom Routes pro Node in Terraform"
+          echo ""
+          echo "Empfehlung: Overlay reicht für Production."
+          echo "Underlay nur wenn: direkte VPC-IP für Pods oder max. Performance nötig."
+  debug-ovn:
+    runs-on: ubuntu-latest
+    environment: production
+    needs: validate
+    if: always()
+    steps:
+      - name: Setup SSH
+        env:
+          SSH_PRIVATE_KEY_B64: ${{ secrets.SSH_PRIVATE_KEY_B64 }}
+          BASTION_IP:          ${{ secrets.BASTION_IP }}
+          MASTER_IP:           ${{ secrets.MASTER_IP }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY_B64" | base64 -d > ~/.ssh/rke2-key
+          chmod 600 ~/.ssh/rke2-key
+          for i in $(seq 1 6); do
+            ssh-keyscan -T 15 -H "$BASTION_IP" >> ~/.ssh/known_hosts 2>/dev/null && break
+            sleep 5
+          done
+          printf 'Host master\n  HostName %s\n  User ubuntu\n  IdentityFile ~/.ssh/rke2-key\n  StrictHostKeyChecking no\n  ProxyJump ubuntu@%s\n  ConnectTimeout 15\n\nHost %s\n  User ubuntu\n  IdentityFile ~/.ssh/rke2-key\n  StrictHostKeyChecking no\n  ConnectTimeout 15\n' \
+            "$MASTER_IP" "$BASTION_IP" "$BASTION_IP" > ~/.ssh/config
+          chmod 600 ~/.ssh/config
+
+      - name: OVN Debug Logs
+        env:
+          BASTION_IP: ${{ secrets.BASTION_IP }}
+          MASTER_IP:  ${{ secrets.MASTER_IP }}
+        run: |
+          ssh -F ~/.ssh/config master << 'REMOTE'
+          K="sudo /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml --insecure-skip-tls-verify"
+          echo "=== ovn-central Logs ==="
+          OVN_POD=$($K get pod -n kube-system -l component=ovn-central -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+          [ -n "$OVN_POD" ] && $K logs -n kube-system "$OVN_POD" --tail=30 2>/dev/null || echo "ovn-central nicht gefunden / Pending"
+
+          echo ""
+          echo "=== kube-ovn-controller Logs ==="
+          CTRL_POD=$($K get pod -n kube-system -l app=kube-ovn-controller -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+          [ -n "$CTRL_POD" ] && $K logs -n kube-system "$CTRL_POD" --tail=20 2>/dev/null || echo "nicht gefunden"
+
+          echo ""
+          echo "=== kube-ovn-cni Logs (erster Node) ==="
+          CNI_POD=$($K get pod -n kube-system -l app=kube-ovn-cni -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+          [ -n "$CNI_POD" ] && $K logs -n kube-system "$CNI_POD" --tail=20 2>/dev/null || echo "nicht gefunden"
+
+          echo ""
+          echo "=== Events kube-system ==="
+          $K get events -n kube-system --sort-by='.lastTimestamp' 2>/dev/null | tail -15
+          REMOTE
+
+  fix-ovn-bootstrap:
+    runs-on: ubuntu-latest
+    environment: production
+    needs: debug-ovn
+    if: always()
+    steps:
+      - name: Setup SSH + kubectl
+        env:
+          SSH_PRIVATE_KEY_B64: ${{ secrets.SSH_PRIVATE_KEY_B64 }}
+          BASTION_IP:          ${{ secrets.BASTION_IP }}
+          MASTER_IP:           ${{ secrets.MASTER_IP }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY_B64" | base64 -d > ~/.ssh/rke2-key
+          chmod 600 ~/.ssh/rke2-key
+          for i in $(seq 1 6); do
+            ssh-keyscan -T 15 -H "$BASTION_IP" >> ~/.ssh/known_hosts 2>/dev/null && break
+            sleep 5
+          done
+          printf 'Host master\n  HostName %s\n  User ubuntu\n  IdentityFile ~/.ssh/rke2-key\n  StrictHostKeyChecking no\n  ProxyJump ubuntu@%s\n  ConnectTimeout 15\n\nHost %s\n  User ubuntu\n  IdentityFile ~/.ssh/rke2-key\n  StrictHostKeyChecking no\n  ConnectTimeout 15\n' \
+            "$MASTER_IP" "$BASTION_IP" "$BASTION_IP" > ~/.ssh/config
+          chmod 600 ~/.ssh/config
+
+      - name: Fix OVN Bootstrap (kube-ovn/role=master Label + Helm Upgrade)
+        env:
+          BASTION_IP: ${{ secrets.BASTION_IP }}
+          MASTER_IP:  ${{ secrets.MASTER_IP }}
+        run: |
+          ssh -F ~/.ssh/config master << 'REMOTE'
+          K="sudo /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml --insecure-skip-tls-verify"
+          H="sudo /var/lib/rancher/rke2/bin/helm --kubeconfig /etc/rancher/rke2/rke2.yaml"
+
+          echo "=== Step 1: Master Node labeln ==="
+          MASTER_NODE=$($K get nodes -o jsonpath='{.items[?(@.metadata.labels.node-role\.kubernetes\.io/control-plane)].metadata.name}' 2>/dev/null | awk '{print $1}')
+          echo "Master: $MASTER_NODE"
+          $K label node "$MASTER_NODE" kube-ovn/role=master --overwrite
+          echo "✅ Label gesetzt"
+
+          echo ""
+          echo "=== Step 2: Helm Upgrade Kube-OVN ==="
+          MASTER_IP_LOCAL=$(hostname -I | awk '{print $1}')
+          echo "Master IP: $MASTER_IP_LOCAL"
+
+          $H repo add kubeovn https://kubeovn.github.io/kube-ovn 2>/dev/null || true
+          $H repo update kubeovn 2>/dev/null || true
+
+          # Helm Upgrade (ohne CPU --set, Helm ignoriert Hyphens in Key-Names)
+          $H upgrade kube-ovn kubeovn/kube-ovn \
+            --namespace kube-system \
+            --version 1.13.0 \
+            --reuse-values \
+            --set MASTER_NODES="$MASTER_IP_LOCAL" \
+            --insecure-skip-tls-verify
+
+          # Direktes kubectl patch für ovn-central CPU resources
+          echo "Patching ovn-central deployment CPU requests..."
+          # Erst prüfen welche Container es hat
+          $K get deployment ovn-central -n kube-system -o jsonpath='{range .spec.template.spec.containers[*]}{.name}: {.resources}{"\n"}{end}' 2>/dev/null
+
+          $K patch deployment ovn-central -n kube-system \
+            --type strategic \
+            --patch '{"spec":{"template":{"spec":{"containers":[{"name":"ovn-central","resources":{"requests":{"cpu":"100m","memory":"100Mi"},"limits":{"cpu":"1","memory":"1Gi"}}}]}}}}' \
+            2>/dev/null && echo "✅ ovn-central CPU patched" || echo "⚠️ strategic patch failed"
+
+          echo "✅ Helm Upgrade done"
+
+          echo ""
+          echo "=== Step 2b: Crashende CNI Pods neu starten (MaxBackoff reset) ==="
+          $K delete pods -n kube-system -l app=kube-ovn-cni 2>/dev/null && echo "✅ CNI Pods gelöscht, werden neu gestartet" || echo "⚠️ keine Pods gelöscht"
+          $K delete pods -n kube-system -l app=kube-ovn-controller 2>/dev/null && echo "✅ Controller Pod gelöscht" || true
+          sleep 5
+
+          echo ""
+          echo "=== Step 3: OVN Central Pod beobachten ==="
+          for i in $(seq 1 30); do
+            STATUS=$($K get pods -n kube-system | grep ovn-central | awk '{print $3}' | head -1)
+            echo "  [$i/20] ovn-central: ${STATUS:-not found}"
+            [ "$STATUS" = "Running" ] && break
+            sleep 10
+          done
+
+          echo ""
+          echo "=== Step 4: CNI Pods ==="
+          for i in $(seq 1 30); do
+            RUNNING=$($K get pods -n kube-system | grep "kube-ovn-cni" | grep -c "Running" || echo 0)
+            TOTAL=$($K get pods -n kube-system | grep -c "kube-ovn-cni" || echo 0)
+            echo "  [$i/20] kube-ovn-cni: $RUNNING/$TOTAL Running"
+            [ "$RUNNING" -ge 1 ] && break
+            sleep 10
+          done
+
+          echo ""
+          echo "=== Final Status ==="
+          $K get pods -n kube-system | grep -E "ovn|kube-ovn"
+          $K get nodes
+          REMOTE
+
+  describe-ovn-central:
+    runs-on: ubuntu-latest
+    environment: production
+    needs: fix-ovn-bootstrap
+    if: always()
+    steps:
+      - name: Setup SSH
+        env:
+          SSH_PRIVATE_KEY_B64: ${{ secrets.SSH_PRIVATE_KEY_B64 }}
+          BASTION_IP:          ${{ secrets.BASTION_IP }}
+          MASTER_IP:           ${{ secrets.MASTER_IP }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY_B64" | base64 -d > ~/.ssh/rke2-key
+          chmod 600 ~/.ssh/rke2-key
+          for i in $(seq 1 6); do
+            ssh-keyscan -T 15 -H "$BASTION_IP" >> ~/.ssh/known_hosts 2>/dev/null && break; sleep 5; done
+          printf 'Host master\n  HostName %s\n  User ubuntu\n  IdentityFile ~/.ssh/rke2-key\n  StrictHostKeyChecking no\n  ProxyJump ubuntu@%s\n  ConnectTimeout 15\n\nHost %s\n  User ubuntu\n  IdentityFile ~/.ssh/rke2-key\n  StrictHostKeyChecking no\n  ConnectTimeout 15\n' \
+            "$MASTER_IP" "$BASTION_IP" "$BASTION_IP" > ~/.ssh/config
+          chmod 600 ~/.ssh/config
+
+      - name: Describe ovn-central + Node Labels
+        env:
+          BASTION_IP: ${{ secrets.BASTION_IP }}
+          MASTER_IP:  ${{ secrets.MASTER_IP }}
+        run: |
+          ssh -F ~/.ssh/config master << 'REMOTE'
+          K="sudo /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml --insecure-skip-tls-verify"
+
+          echo "=== Master Node Labels ==="
+          $K get node rke2-dev-master --show-labels
+
+          echo ""
+          echo "=== ovn-central describe ==="
+          OVN_POD=$($K get pod -n kube-system -l app=ovn-central -o name 2>/dev/null | head -1)
+          [ -z "$OVN_POD" ] && OVN_POD=$($K get pod -n kube-system --no-headers 2>/dev/null | grep "ovn-central" | awk '{print "pod/" $1}'| head -1)
+          echo "Pod: $OVN_POD"
+          [ -n "$OVN_POD" ] && $K describe $OVN_POD -n kube-system 2>/dev/null | tail -30
+
+          echo ""
+          echo "=== Helm Values ovn-central ==="
+          echo ""
+          echo "=== Events für ovn-central ==="
+          $K get events -n kube-system --field-selector involvedObject.name=ovn-central-7f8b475d6d-xh5j6 2>/dev/null | tail -10
+          echo ""
+          echo "=== ovn-central Deployment nodeSelector ==="
+          $K get deployment ovn-central -n kube-system -o yaml 2>/dev/null | grep -A10 "nodeSelector\|tolerations" | head -20
+          REMOTE

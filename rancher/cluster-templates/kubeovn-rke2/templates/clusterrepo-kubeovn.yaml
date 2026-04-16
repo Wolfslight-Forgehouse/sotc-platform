@@ -1,0 +1,8 @@
+{{- if .Values.kubeovn.enabled }}
+apiVersion: catalog.cattle.io/v1
+kind: ClusterRepo
+metadata:
+  name: kubeovn
+spec:
+  url: https://kubeovn.github.io/kube-ovn
+{{- end }}

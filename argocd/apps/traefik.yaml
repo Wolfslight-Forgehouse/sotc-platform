@@ -1,0 +1,34 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: traefik
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.io
+spec:
+  project: infrastructure
+  source:
+    repoURL: https://traefik.github.io/charts
+    chart: traefik
+    targetRevision: 33.2.1
+    helm:
+      parameters:
+        - name: ingressClass.enabled
+          value: "true"
+        - name: ingressClass.isDefaultClass
+          value: "true"
+        - name: service.type
+          value: LoadBalancer
+        - name: providers.kubernetesIngress.enabled
+          value: "true"
+        - name: providers.kubernetesCRD.enabled
+          value: "true"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: traefik
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

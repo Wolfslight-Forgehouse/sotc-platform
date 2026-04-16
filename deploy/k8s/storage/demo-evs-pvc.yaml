@@ -1,0 +1,46 @@
+# Demo: EVS Block Storage PVC (Cinder CSI)
+# ReadWriteOnce, 10Gi — typisch für Datenbanken, stateful apps
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: demo-evs-pvc
+  namespace: default
+  labels:
+    app: demo-storage
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: csi-cinder-sc-delete
+  resources:
+    requests:
+      storage: 10Gi
+---
+# Test Pod: schreibt Daten auf EVS Volume
+apiVersion: v1
+kind: Pod
+metadata:
+  name: demo-evs-pod
+  namespace: default
+  labels:
+    app: demo-storage
+spec:
+  containers:
+  - name: writer
+    image: busybox:latest
+    command: ["/bin/sh", "-c"]
+    args:
+    - |
+      echo "✅ EVS Block Storage mounted!" > /data/success.txt
+      echo "Timestamp: $(date)" >> /data/success.txt
+      echo "Node: $(hostname)" >> /data/success.txt
+      cat /data/success.txt
+      sleep 3600
+    volumeMounts:
+    - name: evs-vol
+      mountPath: /data
+  volumes:
+  - name: evs-vol
+    persistentVolumeClaim:
+      claimName: demo-evs-pvc
+  restartPolicy: Never

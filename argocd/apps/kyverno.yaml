@@ -1,0 +1,47 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kyverno
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: infrastructure
+
+  source:
+    chart: kyverno-otc
+    repoURL: ghcr.io/Wolfslight-Forgehouse/charts/kyverno
+    targetRevision: 0.1.0
+    helm:
+      releaseName: kyverno
+      values: |
+        # Inline values — valueFiles do not work with OCI chart sources.
+        # Add production overrides here.
+        replicaCount: 3
+        admissionController:
+          replicas: 3
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kyverno-system
+
+  syncPolicy:
+    automated:
+      selfHeal: true
+      prune: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+
+  ignoreDifferences:
+    - group: admissionregistration.k8s.io
+      kind: ValidatingWebhookConfiguration
+      jsonPointers:
+        - /webhooks/0/clientConfig/caBundle
+        - /webhooks/1/clientConfig/caBundle
+        - /webhooks/2/clientConfig/caBundle
+    - group: admissionregistration.k8s.io
+      kind: MutatingWebhookConfiguration
+      jsonPointers:
+        - /webhooks/0/clientConfig/caBundle
+        - /webhooks/1/clientConfig/caBundle

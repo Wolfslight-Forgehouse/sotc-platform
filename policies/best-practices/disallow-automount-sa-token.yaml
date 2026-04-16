@@ -1,0 +1,41 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-automount-sa-token
+  annotations:
+    policies.kyverno.io/title: Disallow Automount Service Account Token
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      Automounting service account tokens gives containers access to the
+      Kubernetes API, which most workloads do not need. This policy requires
+      that automountServiceAccountToken is set to false unless explicitly
+      needed.
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: disallow-automount-sa-token
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kube-public
+                - kube-node-lease
+                - kyverno
+                - cattle-system
+                - calico-system
+      validate:
+        message: >-
+          Automounting service account tokens is not allowed. Set
+          automountServiceAccountToken to false.
+        pattern:
+          spec:
+            automountServiceAccountToken: false

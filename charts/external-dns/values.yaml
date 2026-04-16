@@ -1,0 +1,73 @@
+# Default values for external-dns-otc
+# Upstream external-dns chart values are nested under the 'external-dns' key
+
+external-dns:
+  # OTC Designate DNS provider
+  provider:
+    name: designate
+
+  # Watch ingress and service resources for DNS annotations
+  sources:
+    - ingress
+    - service
+
+  # Only manage records in the private zone
+  domainFilters:
+    - sotc.internal
+
+  # upsert-only: create and update records, never delete
+  # This prevents accidental deletion of DNS records when services are removed
+  policy: upsert-only
+
+  # Ownership identifier — used in TXT records to track which records
+  # ExternalDNS manages. Must be unique per cluster.
+  txtOwnerId: rke2-sotc
+
+  # TXT record prefix to avoid conflicts with CNAME records
+  txtPrefix: _edns.
+
+  # Sync interval
+  interval: 1m
+
+  # Log level (info, debug, warning, error)
+  logLevel: info
+
+  # Resource requests/limits
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+  # Service account for ExternalDNS
+  serviceAccount:
+    create: true
+    name: external-dns
+
+  # Environment variables for Designate authentication (OTC AK/SK)
+  # These should be provided via a Kubernetes Secret in production
+  env:
+    - name: OS_AUTH_URL
+      valueFrom:
+        secretKeyRef:
+          name: external-dns-designate-credentials
+          key: OS_AUTH_URL
+    - name: OS_REGION_NAME
+      value: eu-ch2
+    - name: OS_PROJECT_NAME
+      valueFrom:
+        secretKeyRef:
+          name: external-dns-designate-credentials
+          key: OS_PROJECT_NAME
+    - name: OS_ACCESS_KEY
+      valueFrom:
+        secretKeyRef:
+          name: external-dns-designate-credentials
+          key: OS_ACCESS_KEY
+    - name: OS_SECRET_KEY
+      valueFrom:
+        secretKeyRef:
+          name: external-dns-designate-credentials
+          key: OS_SECRET_KEY

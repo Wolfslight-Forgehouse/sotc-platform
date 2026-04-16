@@ -1,0 +1,31 @@
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: test-evs-100g
+  namespace: default
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: csi-cinder-sc-delete
+  resources:
+    requests:
+      storage: 100Gi
+---
+# Test Pod der das Volume nutzt
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-evs-pod
+  namespace: default
+spec:
+  containers:
+  - name: test
+    image: nginx:alpine
+    volumeMounts:
+    - name: data
+      mountPath: /data
+  volumes:
+  - name: data
+    persistentVolumeClaim:
+      claimName: test-evs-100g

@@ -1,0 +1,47 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-unsafe-sysctls
+  annotations:
+    policies.kyverno.io/title: Disallow Unsafe Sysctls
+    policies.kyverno.io/category: Pod Security Standards (Baseline)
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      Sysctls can disable security mechanisms or affect all containers on a
+      host, and should be disallowed except for a safe subset. This policy
+      ensures that only allowed safe sysctls are specified:
+      kernel.shm_rmid_forced, net.ipv4.ip_local_port_range,
+      net.ipv4.ip_unprivileged_port_start, net.ipv4.tcp_syncookies,
+      net.ipv4.ping_group_range.
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: unsafe-sysctls
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kube-public
+                - kube-node-lease
+                - kyverno
+                - cattle-system
+                - calico-system
+      validate:
+        message: >-
+          Setting unsafe sysctls is not allowed. Only safe sysctls are permitted:
+          kernel.shm_rmid_forced, net.ipv4.ip_local_port_range,
+          net.ipv4.ip_unprivileged_port_start, net.ipv4.tcp_syncookies,
+          net.ipv4.ping_group_range.
+        pattern:
+          spec:
+            =(securityContext):
+              =(sysctls):
+                - name: "kernel.shm_rmid_forced | net.ipv4.ip_local_port_range | net.ipv4.ip_unprivileged_port_start | net.ipv4.tcp_syncookies | net.ipv4.ping_group_range"

@@ -1,0 +1,15 @@
+apiVersion: v2
+name: swiss-otc-ccm
+description: Swiss OTC Cloud Controller Manager for Kubernetes
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - kubernetes
+  - cloud-controller-manager
+  - open-telekom-cloud
+  - swiss-otc
+  - load-balancer
+maintainers:
+  - name: Maintainer
+    url: https://github.com/your-org

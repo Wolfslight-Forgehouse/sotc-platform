@@ -1,0 +1,36 @@
+# ingress-nginx: PUBLIC
+# IngressClass: nginx-public
+# Nur verfügbar wenn ccm_elb_eip = true (Pipeline-Variable)
+# CCM erstellt ELB MIT EIP → öffentlich erreichbar
+#
+# Annotation auf Ingress: kubernetes.io/ingress.class: nginx-public
+
+controller:
+  ingressClassResource:
+    name: nginx-public
+    enabled: true
+    default: false
+    controllerValue: "k8s.io/ingress-nginx-public"
+
+  ingressClass: nginx-public
+
+  service:
+    type: LoadBalancer
+    annotations:
+      # CCM: öffentlicher ELB mit EIP
+      otc.io/elb-virsubnet-id: "${SUBNET_ID}"
+      otc.io/elb-eip-type: "5_bgp"
+      otc.io/elb-eip-bandwidth-name: "nginx-public-bw"
+      otc.io/elb-eip-bandwidth-size: "10"
+      otc.io/elb-eip-charge-mode: "traffic"
+
+  admissionWebhooks:
+    enabled: false
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi

@@ -1,0 +1,52 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: restrict-apparmor-profiles
+  annotations:
+    policies.kyverno.io/title: Restrict AppArmor Profiles
+    policies.kyverno.io/category: Pod Security Standards (Restricted)
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      AppArmor profiles can restrict what a container is allowed to do at the
+      OS level. This policy ensures that if an AppArmor profile is specified,
+      it must be runtime/default. Unconfined profiles are not permitted.
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: apparmor-profiles
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kube-public
+                - kube-node-lease
+                - kyverno
+                - cattle-system
+                - calico-system
+      validate:
+        message: >-
+          Only the runtime/default AppArmor profile is allowed. Set
+          securityContext.appArmorProfile.type to RuntimeDefault or remove
+          the annotation.
+        pattern:
+          spec:
+            =(ephemeralContainers):
+              - =(securityContext):
+                  =(appArmorProfile):
+                    type: "RuntimeDefault"
+            =(initContainers):
+              - =(securityContext):
+                  =(appArmorProfile):
+                    type: "RuntimeDefault"
+            containers:
+              - =(securityContext):
+                  =(appArmorProfile):
+                    type: "RuntimeDefault"

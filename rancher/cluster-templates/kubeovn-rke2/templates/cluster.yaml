@@ -1,0 +1,64 @@
+apiVersion: provisioning.cattle.io/v1
+kind: Cluster
+metadata:
+  name: {{ include "cluster.fullname" . }}
+  namespace: fleet-default
+  labels:
+    cluster-template: kubeovn-rke2-otc
+    cni: kube-ovn
+  annotations:
+    field.cattle.io/description: "RKE2 cluster with KubeOVN CNI on Swiss OTC"
+spec:
+  {{- if .Values.cloudCredentialSecretName }}
+  cloudCredentialSecretName: {{ .Values.cloudCredentialSecretName }}
+  {{- end }}
+  kubernetesVersion: {{ .Values.cluster.kubernetesVersion | quote }}
+  enableNetworkPolicy: false
+  rkeConfig:
+    machineGlobalConfig:
+      cni: none
+      disable:
+        - rke2-canal
+        - rke2-ingress-nginx
+      cloud-provider-name: external
+      kubelet-arg:
+        - cloud-provider=external
+      kube-apiserver-arg:
+        - cloud-provider=external
+    machineSelectorConfig:
+      - config: {}
+    machinePools:
+      - name: control-plane
+        controlPlaneRole: true
+        etcdRole: true
+        workerRole: false
+        quantity: {{ include "cluster.controlPlaneCount" . }}
+        unhealthyNodeTimeout: 120s
+        machineConfigRef:
+          kind: OpentelekomcloudConfig
+          name: {{ include "cluster.fullname" . }}-cp
+        labels:
+          kube-ovn/role: master
+          node-role.kubernetes.io/control-plane: "true"
+      - name: worker
+        controlPlaneRole: false
+        etcdRole: false
+        workerRole: true
+        quantity: {{ include "cluster.workerCount" . }}
+        unhealthyNodeTimeout: 120s
+        machineConfigRef:
+          kind: OpentelekomcloudConfig
+          name: {{ include "cluster.fullname" . }}-worker
+    upgradeStrategy:
+      controlPlaneDrainOptions:
+        enabled: true
+        deleteEmptyDirData: true
+        force: false
+        gracePeriod: -1
+      workerDrainOptions:
+        enabled: true
+        deleteEmptyDirData: true
+        force: false
+        gracePeriod: -1
+      controlPlaneConcurrency: "1"
+      workerConcurrency: "1"

@@ -1,0 +1,25 @@
+# Production overrides for external-dns-otc
+# Applied on top of values.yaml via ArgoCD valueFiles
+
+external-dns:
+  # Production: stricter resource limits
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+  # Production: reduce sync interval for faster convergence
+  interval: 30s
+
+  # Production: enable metrics for Prometheus scraping
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+
+  # Production: pod disruption budget
+  podDisruptionBudget:
+    minAvailable: 1

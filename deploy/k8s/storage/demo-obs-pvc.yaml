@@ -1,0 +1,46 @@
+# Demo: OBS Object Storage PVC (CSI-S3 / GeeseFS)
+# ReadWriteMany — shared across multiple pods
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: demo-obs-pvc
+  namespace: default
+  labels:
+    app: demo-storage
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: csi-obs
+  resources:
+    requests:
+      storage: 10Gi
+---
+# Test Pod: schreibt + liest aus OBS Bucket
+apiVersion: v1
+kind: Pod
+metadata:
+  name: demo-obs-pod
+  namespace: default
+  labels:
+    app: demo-storage
+spec:
+  containers:
+  - name: writer
+    image: busybox:latest
+    command: ["/bin/sh", "-c"]
+    args:
+    - |
+      echo "✅ OBS Object Storage mounted!" > /data/success.txt
+      echo "Timestamp: $(date)" >> /data/success.txt
+      echo "Node: $(hostname)" >> /data/success.txt
+      cat /data/success.txt
+      sleep 3600
+    volumeMounts:
+    - name: obs-vol
+      mountPath: /data
+  volumes:
+  - name: obs-vol
+    persistentVolumeClaim:
+      claimName: demo-obs-pvc
+  restartPolicy: Never

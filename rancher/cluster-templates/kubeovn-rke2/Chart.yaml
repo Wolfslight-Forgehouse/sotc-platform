@@ -1,0 +1,26 @@
+apiVersion: v2
+name: kubeovn-rke2-otc
+description: >-
+  RKE2 cluster template for Swiss Open Telekom Cloud with KubeOVN CNI
+  and OTC Cloud Controller Manager. Provisions Rancher-managed clusters
+  with Geneve overlay networking.
+type: application
+version: 0.1.0
+appVersion: "v1.13.0"
+annotations:
+  catalog.cattle.io/type: cluster-template
+  catalog.cattle.io/display-name: "RKE2 + KubeOVN (Swiss OTC)"
+  catalog.cattle.io/namespace: fleet-default
+  catalog.cattle.io/os: linux
+  catalog.cattle.io/permits-os: linux
+  catalog.cattle.io/rancher-version: ">= 2.8.0-0"
+keywords:
+  - rke2
+  - kube-ovn
+  - otc
+  - swiss-otc
+  - cluster-template
+  - open-telekom-cloud
+maintainers:
+  - name: SkyNet Labs
+    url: https://github.com/Wolfslight-Forgehouse

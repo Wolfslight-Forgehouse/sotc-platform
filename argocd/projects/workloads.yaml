@@ -1,0 +1,30 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: workloads
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.io
+spec:
+  description: "Application workloads (no cluster-wide resources)"
+  sourceRepos:
+    - 'https://github.com/Wolfslight-Forgehouse/*'
+  destinations:
+    - namespace: 'workloads-*'
+      server: https://kubernetes.default.svc
+    - namespace: 'default'
+      server: https://kubernetes.default.svc
+  # Keine ClusterRoles, ClusterRoleBindings etc. für Workloads
+  namespaceResourceWhitelist:
+    - group: 'apps'
+      kind: '*'
+    - group: ''
+      kind: 'Service'
+    - group: ''
+      kind: 'ConfigMap'
+    - group: ''
+      kind: 'Secret'
+    - group: 'networking.k8s.io'
+      kind: 'Ingress'
+    - group: 'postgresql.cnpg.io'
+      kind: 'Cluster'

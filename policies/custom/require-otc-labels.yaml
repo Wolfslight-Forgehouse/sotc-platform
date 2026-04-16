@@ -1,0 +1,43 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-otc-labels
+  annotations:
+    policies.kyverno.io/title: Require OTC Labels
+    policies.kyverno.io/category: Custom (OTC)
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      Open Telekom Cloud workloads must be tagged with project and environment
+      labels for cost allocation and operational visibility. This policy
+      requires the otc.cloud/project and otc.cloud/environment labels on
+      all pods.
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: require-otc-labels
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kube-public
+                - kube-node-lease
+                - kyverno
+                - cattle-system
+                - calico-system
+      validate:
+        message: >-
+          OTC labels are required. Add otc.cloud/project and
+          otc.cloud/environment labels to the pod metadata.
+        pattern:
+          metadata:
+            labels:
+              otc.cloud/project: "?*"
+              otc.cloud/environment: "?*"

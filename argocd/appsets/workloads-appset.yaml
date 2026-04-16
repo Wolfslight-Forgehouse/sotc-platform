@@ -1,0 +1,31 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: workloads
+  namespace: argocd
+spec:
+  generators:
+    - git:
+        repoURL: https://github.com/Wolfslight-Forgehouse/rke2-sotc-cloud-manager
+        revision: main
+        directories:
+          - path: deploy/apps/*
+  template:
+    metadata:
+      name: '{{path.basename}}'
+      namespace: argocd
+    spec:
+      project: workloads
+      source:
+        repoURL: https://github.com/Wolfslight-Forgehouse/rke2-sotc-cloud-manager
+        targetRevision: main
+        path: '{{path}}'
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{path.basename}}'
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true

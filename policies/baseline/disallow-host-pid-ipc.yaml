@@ -1,0 +1,59 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-host-pid-ipc
+  annotations:
+    policies.kyverno.io/title: Disallow Host PID and IPC
+    policies.kyverno.io/category: Pod Security Standards (Baseline)
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      Sharing the host PID or IPC namespace allows containers to access host
+      processes and IPC resources, which is a security risk. This policy ensures
+      that hostPID and hostIPC are set to false.
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: host-pid
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kube-public
+                - kube-node-lease
+                - kyverno
+                - cattle-system
+                - calico-system
+      validate:
+        message: "Sharing the host PID namespace is not allowed. Set spec.hostPID to false."
+        pattern:
+          spec:
+            =(hostPID): false
+    - name: host-ipc
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kube-public
+                - kube-node-lease
+                - kyverno
+                - cattle-system
+                - calico-system
+      validate:
+        message: "Sharing the host IPC namespace is not allowed. Set spec.hostIPC to false."
+        pattern:
+          spec:
+            =(hostIPC): false

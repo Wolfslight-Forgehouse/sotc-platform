@@ -1,0 +1,14 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres-demo
+  namespace: default
+spec:
+  instances: 1
+  storage:
+    storageClass: csi-cinder-sc-delete
+    size: 10Gi
+  postgresql:
+    parameters:
+      max_connections: "100"
+      shared_buffers: 128MB

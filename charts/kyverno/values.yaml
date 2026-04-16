@@ -1,0 +1,55 @@
+# Default values for kyverno-otc
+# Upstream Kyverno chart values are nested under the 'kyverno' key
+
+kyverno:
+  # Admission controller configuration
+  admissionController:
+    replicas: 3
+
+  # Create the target namespace
+  namespaceOverride: kyverno-system
+
+  # Background controller for policy reports
+  backgroundController:
+    replicas: 2
+
+  # Cleanup controller
+  cleanupController:
+    replicas: 2
+
+  # Reports controller
+  reportsController:
+    replicas: 2
+
+  # CRDs management
+  crds:
+    install: true
+
+# Policy category toggles
+# Each category can be enabled/disabled independently.
+# validationFailureAction can be overridden per category (Audit or Enforce).
+policies:
+  baseline:
+    enabled: true
+    validationFailureAction: Audit
+
+  restricted:
+    enabled: true
+    validationFailureAction: Audit
+
+  bestPractices:
+    enabled: true
+    validationFailureAction: Audit
+
+  custom:
+    enabled: true
+    validationFailureAction: Audit
+
+# Namespace exclusions applied to all policy categories
+namespaceExclusions:
+  - kube-system
+  - kube-public
+  - kube-node-lease
+  - kyverno
+  - cattle-system
+  - calico-system

@@ -1,0 +1,13 @@
+image:
+  useHostBinary: true
+  hostBinaryDir: /usr/local/bin
+
+logLevel: 2
+
+existingSecret: swiss-otc-cloud-config
+
+nodeSelector:
+  node-role.kubernetes.io/control-plane: "true"
+
+extraArgs:
+  - --allow-untagged-cloud

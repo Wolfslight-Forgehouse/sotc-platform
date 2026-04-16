@@ -1,0 +1,33 @@
+# Shared ELB Demo — Option B
+# Mehrere Services teilen sich einen pre-deployed ELB via kubernetes.io/elb.id
+# ELB ID wird dynamisch aus Terraform Output in Pipeline gesetzt
+#
+# Usage:
+#   kubectl annotate svc shared-elb-demo kubernetes.io/elb.id=<ELB_ID> -n default
+#
+apiVersion: v1
+kind: Service
+metadata:
+  name: shared-elb-demo
+  namespace: default
+  annotations:
+    # ELB ID wird in Pipeline via kubectl annotate gesetzt (terraform output shared_elb_id)
+    # kubernetes.io/elb.id: "<SHARED_ELB_ID>"
+    #
+    # Port auf dem shared ELB (verschieden von anderen Services!)
+    kubernetes.io/elb.protocol: TCP
+    kubernetes.io/elb.port: "8080"
+    #
+    # Subnet für ELB VIP (wird in Pipeline gesetzt)
+    # otc.io/elb-virsubnet-id: "<SUBNET_ID>"
+spec:
+  type: LoadBalancer
+  # CCM nutzt existing ELB statt neuen zu erstellen
+  loadBalancerIP: ""
+  selector:
+    app: demo-app
+  ports:
+    - name: http
+      protocol: TCP
+      port: 8080
+      targetPort: 80

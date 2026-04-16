@@ -1,0 +1,91 @@
+name: Kyverno CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "charts/kyverno/**"
+      - "policies/baseline/**"
+      - ".github/workflows/kyverno-ci.yaml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "charts/kyverno/**"
+      - "policies/baseline/**"
+      - ".github/workflows/kyverno-ci.yaml"
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  lint-and-test:
+    name: Lint & Test Kyverno Policies
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: "v3.15.4"
+
+      - name: Install Kyverno CLI
+        run: |
+          curl -LO https://github.com/kyverno/kyverno/releases/download/v1.12.7/kyverno-cli_v1.12.7_linux_amd64.tar.gz
+          tar -xzf kyverno-cli_v1.12.7_linux_amd64.tar.gz
+          sudo mv kyverno /usr/local/bin/
+          kyverno version
+
+      - name: Add Kyverno Helm repo
+        run: |
+          helm repo add kyverno https://kyverno.github.io/kyverno/
+          helm repo update
+
+      - name: Build Helm dependencies
+        run: helm dependency build charts/kyverno/
+
+      - name: Helm Lint
+        run: helm lint charts/kyverno/
+
+      - name: Template and validate against policies
+        run: |
+          helm template kyverno charts/kyverno/ \
+            --namespace kyverno-system \
+            | kyverno apply policies/baseline/ --resource -
+
+      - name: Kyverno Policy Tests
+        run: kyverno test policies/baseline/
+
+  publish:
+    name: Package & Publish to GHCR
+    needs: lint-and-test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: "v3.15.4"
+
+      - name: Add Kyverno Helm repo
+        run: |
+          helm repo add kyverno https://kyverno.github.io/kyverno/
+          helm repo update
+
+      - name: Build Helm dependencies
+        run: helm dependency build charts/kyverno/
+
+      - name: Login to GHCR
+        run: echo "${{ secrets.GHCR_TOKEN }}" | helm registry login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Package chart
+        run: helm package charts/kyverno/ --destination .helm-packages/
+
+      - name: Push to GHCR OCI
+        run: |
+          helm push .helm-packages/kyverno-otc-*.tgz oci://ghcr.io/Wolfslight-Forgehouse/charts

@@ -1,0 +1,62 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kube-bench-workers
+  namespace: kube-system
+  labels:
+    app: kube-bench
+    component: cis-scanner
+spec:
+  completions: 1
+  parallelism: 1
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app: kube-bench
+    spec:
+      hostPID: true
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
+      restartPolicy: Never
+      containers:
+        - name: kube-bench
+          image: aquasec/kube-bench:latest
+          command:
+            - kube-bench
+            - run
+            - --targets
+            - node
+            - --benchmark
+            - rke2-cis-1.7
+            - --json
+          volumeMounts:
+            - name: var-lib-rancher
+              mountPath: /var/lib/rancher
+              readOnly: true
+            - name: etc-rancher
+              mountPath: /etc/rancher
+              readOnly: true
+            - name: etc-systemd
+              mountPath: /etc/systemd
+              readOnly: true
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+      volumes:
+        - name: var-lib-rancher
+          hostPath:
+            path: /var/lib/rancher
+        - name: etc-rancher
+          hostPath:
+            path: /etc/rancher
+        - name: etc-systemd
+          hostPath:
+            path: /etc/systemd

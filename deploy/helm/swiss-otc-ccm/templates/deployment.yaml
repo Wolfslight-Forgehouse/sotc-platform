@@ -1,0 +1,126 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: swiss-otc-ccm
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: swiss-otc-ccm
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  replicas: {{ .Values.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: swiss-otc-ccm
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: swiss-otc-ccm
+    spec:
+      hostNetwork: true
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.image.useHostBinary }}
+      # Use binary from host filesystem (no container image needed)
+      containers:
+        - name: swiss-otc-ccm
+          image: "alpine:3.20"
+          imagePullPolicy: IfNotPresent
+          command:
+            - /host-bin/swiss-otc-cloud-controller-manager
+          args:
+            - --v={{ .Values.logLevel | default 2 }}
+            - --cloud-provider=opentelekomcloud
+            - --cloud-config=/etc/swiss-otc/cloud.conf
+            - --use-service-account-credentials=true
+            - --bind-address=0.0.0.0
+            - --secure-port=10258
+            - --leader-elect={{ .Values.leaderElect | default true }}
+            {{- range .Values.extraArgs }}
+            - {{ . }}
+            {{- end }}
+          volumeMounts:
+            - name: cloud-config
+              mountPath: /etc/swiss-otc
+              readOnly: true
+            - name: host-binary
+              mountPath: /host-bin
+              readOnly: true
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 10258
+              scheme: HTTPS
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 10258
+              scheme: HTTPS
+            initialDelaySeconds: 10
+            periodSeconds: 10
+      volumes:
+        - name: cloud-config
+          secret:
+            secretName: {{ .Values.existingSecret | default "swiss-otc-cloud-config" }}
+        - name: host-binary
+          hostPath:
+            path: {{ .Values.image.hostBinaryDir | default "/usr/local/bin" }}
+            type: Directory
+      {{- else }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      # Use container image
+      containers:
+        - name: swiss-otc-ccm
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - swiss-otc-cloud-controller-manager
+          args:
+            - --v={{ .Values.logLevel | default 2 }}
+            - --cloud-provider=opentelekomcloud
+            - --cloud-config=/etc/swiss-otc/cloud.conf
+            - --use-service-account-credentials=true
+            - --bind-address=0.0.0.0
+            - --secure-port=10258
+            - --leader-elect={{ .Values.leaderElect | default true }}
+            {{- range .Values.extraArgs }}
+            - {{ . }}
+            {{- end }}
+          volumeMounts:
+            - name: cloud-config
+              mountPath: /etc/swiss-otc
+              readOnly: true
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 10258
+              scheme: HTTPS
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 10258
+              scheme: HTTPS
+            initialDelaySeconds: 10
+            periodSeconds: 10
+      volumes:
+        - name: cloud-config
+          secret:
+            secretName: {{ .Values.existingSecret | default "swiss-otc-cloud-config" }}
+      {{- end }}

@@ -1,0 +1,45 @@
+# Cinder CSI Plugin — Swiss OTC eu-ch2
+# cloud.conf wird als Secret via Pipeline injiziert
+
+secret:
+  enabled: true
+  create: false
+  name: cinder-csi-cloud-config
+
+storageClass:
+  enabled: true
+  delete:
+    isDefault: true
+    allowVolumeExpansion: true
+  retain:
+    isDefault: false
+    allowVolumeExpansion: true
+  custom: |-
+    ---
+    apiVersion: storage.k8s.io/v1
+    kind: StorageClass
+    metadata:
+      name: csi-evs-ssd
+      annotations:
+        storageclass.kubernetes.io/is-default-class: "false"
+    provisioner: cinder.csi.openstack.org
+    volumeBindingMode: WaitForFirstConsumer
+    allowVolumeExpansion: true
+    parameters:
+      type: SSD
+      availability: eu-ch2a
+    ---
+    apiVersion: storage.k8s.io/v1
+    kind: StorageClass
+    metadata:
+      name: csi-evs-sas
+    provisioner: cinder.csi.openstack.org
+    volumeBindingMode: WaitForFirstConsumer
+    allowVolumeExpansion: true
+    parameters:
+      type: SAS
+      availability: eu-ch2a
+
+clusterID: rke2-dev
+
+logVerbosityLevel: 2

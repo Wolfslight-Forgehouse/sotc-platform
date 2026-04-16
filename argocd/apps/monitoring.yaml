@@ -1,0 +1,35 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kube-prometheus-stack
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.io
+spec:
+  project: infrastructure
+  source:
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: kube-prometheus-stack
+    targetRevision: 67.0.0
+    helm:
+      parameters:
+        - name: grafana.adminPassword
+          value: "admin"
+        - name: grafana.ingress.enabled
+          value: "true"
+        - name: grafana.ingress.ingressClassName
+          value: traefik
+        - name: grafana.ingress.hosts
+          value: "{grafana.local}"
+        - name: prometheus.prometheusSpec.retention
+          value: 7d
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

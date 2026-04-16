@@ -1,0 +1,30 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-default-namespace
+  annotations:
+    policies.kyverno.io/title: Disallow Default Namespace
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      The default namespace should not be used for workloads. It lacks
+      resource quotas, network policies, and RBAC boundaries. This policy
+      prevents pods from being created in the default namespace.
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: disallow-default-namespace
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - default
+      validate:
+        message: >-
+          Deploying to the default namespace is not allowed. Use a dedicated
+          namespace for your workloads.
+        deny: {}

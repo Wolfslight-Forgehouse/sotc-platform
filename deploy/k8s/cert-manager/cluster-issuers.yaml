@@ -1,0 +1,65 @@
+# Staging Issuer (zum Testen)
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-staging
+spec:
+  acme:
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    email: lily@ghosttalker.de
+    privateKeySecretRef:
+      name: letsencrypt-staging-key
+    solvers:
+    - http01:
+        ingress:
+          class: traefik
+---
+# Production Issuer
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: lily@ghosttalker.de
+    privateKeySecretRef:
+      name: letsencrypt-prod-key
+    solvers:
+    - http01:
+        ingress:
+          class: traefik
+---
+# Self-signed für interne sotc.internal Domains
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: selfsigned-issuer
+spec:
+  selfSigned: {}
+---
+# Interne CA (für sotc.internal Wildcard TLS)
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: sotc-internal-ca
+  namespace: cert-manager
+spec:
+  isCA: true
+  commonName: sotc.internal
+  secretName: sotc-internal-ca-secret
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: selfsigned-issuer
+    kind: ClusterIssuer
+    group: cert-manager.io
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: sotc-internal-ca-issuer
+spec:
+  ca:
+    secretName: sotc-internal-ca-secret

@@ -1,0 +1,154 @@
+name: CIS Live Patch (kein Redeploy)
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "PATCH zum Starten"
+        required: true
+
+jobs:
+  patch:
+    name: CIS Live Hardening
+    runs-on: ubuntu-latest
+    if: github.event.inputs.confirm == 'PATCH'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7"
+          terraform_wrapper: false
+
+      - name: Setup SSH agent
+        env:
+          SSH_PRIVATE_KEY_B64: ${{ secrets.SSH_PRIVATE_KEY_B64 }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          echo "$SSH_PRIVATE_KEY_B64" | base64 -d > ~/.ssh/rke2_key
+          chmod 600 ~/.ssh/rke2_key
+          eval "$(ssh-agent -s)"
+          ssh-add ~/.ssh/rke2_key
+          echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" >> $GITHUB_ENV
+          echo "SSH_AGENT_PID=$SSH_AGENT_PID" >> $GITHUB_ENV
+
+      - name: Read cluster IPs
+        id: ips
+        env:
+          AWS_ACCESS_KEY_ID:      ${{ secrets.OTC_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY:  ${{ secrets.OTC_SECRET_KEY }}
+          TF_VAR_access_key:      ${{ secrets.OTC_ACCESS_KEY }}
+          TF_VAR_secret_key:      ${{ secrets.OTC_SECRET_KEY }}
+          TF_VAR_project_id:      ${{ secrets.OTC_PROJECT_ID }}
+          TF_VAR_ssh_public_key:  ${{ secrets.SSH_PUBLIC_KEY }}
+          TF_VAR_rke2_token:      ${{ secrets.RKE2_TOKEN }}
+          TF_VAR_ghcr_pull_token: ${{ secrets.GHCR_PULL_TOKEN }}
+          TF_VAR_domain_name:     ${{ secrets.OTC_DOMAIN_NAME }}
+        working-directory: terraform/environments/dev
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ secrets.OBS_TFSTATE_BUCKET }}" \
+            -backend-config="access_key=${{ secrets.OTC_ACCESS_KEY }}" \
+            -backend-config="secret_key=${{ secrets.OTC_SECRET_KEY }}"
+          echo "bastion_ip=$(terraform output -raw bastion_ip)" >> $GITHUB_OUTPUT
+          echo "master_ip=$(terraform output -raw master_ip)"   >> $GITHUB_OUTPUT
+
+      - name: Open kubectl tunnel
+        env:
+          BASTION_IP: ${{ steps.ips.outputs.bastion_ip }}
+          MASTER_IP:  ${{ steps.ips.outputs.master_ip }}
+        run: |
+          ssh-keyscan -H "$BASTION_IP" >> ~/.ssh/known_hosts 2>/dev/null || true
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+            -J "ubuntu@${BASTION_IP}" "ubuntu@${MASTER_IP}" \
+            "sudo cat /etc/rancher/rke2/rke2.yaml" | \
+            sed "s/127.0.0.1/${MASTER_IP}/g" > /tmp/kubeconfig
+          ssh -o StrictHostKeyChecking=no -fNT \
+            -L 6443:${MASTER_IP}:6443 \
+            -o ExitOnForwardFailure=yes \
+            -o ServerAliveInterval=60 \
+            ubuntu@${BASTION_IP}
+          sed -i "s/${MASTER_IP}/127.0.0.1/g" /tmp/kubeconfig
+          sleep 5
+          echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
+          echo "BASTION_IP=${BASTION_IP}"   >> $GITHUB_ENV
+          echo "MASTER_IP=${MASTER_IP}"     >> $GITHUB_ENV
+
+      - name: Fix 1 — chmod 600 (CIS 1.1.1/3/5/9/10/20)
+        env:
+          BASTION_IP: ${{ steps.ips.outputs.bastion_ip }}
+          MASTER_IP:  ${{ steps.ips.outputs.master_ip }}
+        run: |
+          echo "🔧 Fix CIS 1.1.1/3/5/9/10/20 — chmod 600..."
+          ssh -o StrictHostKeyChecking=no \
+            -J ubuntu@${BASTION_IP} ubuntu@${MASTER_IP} \
+            "sudo bash -c 'chmod 600 /etc/rancher/rke2/*.yaml /etc/rancher/rke2/*.conf 2>/dev/null; \
+              find /var/lib/rancher/rke2/server/manifests/ -name \"*.yaml\" -exec chmod 600 {} \; 2>/dev/null; \
+              find /var/lib/rancher/rke2/server/tls/ -name \"*.crt\" -exec chmod 600 {} \; 2>/dev/null; \
+              find /var/lib/rancher/rke2/server/tls/ -name \"*.key\" -exec chmod 600 {} \; 2>/dev/null; \
+              find /var/lib/rancher/rke2/agent/etc/cni/ -type f -exec chmod 600 {} \; 2>/dev/null; \
+              find /var/lib/rancher/rke2/agent/pod-manifests/ -name \"*.yaml\" -exec chmod 600 {} \; 2>/dev/null; \
+              echo CHMOD_DONE'"
+          echo "✅ Datei-Permissions gesetzt"
+
+      - name: Fix 2 — Kyverno Policies (CIS 5.2.*)
+        run: |
+          echo "🛡️  Kyverno Policies (CIS 5.2.*)..."
+          # Kyverno installieren falls noch nicht vorhanden
+          if ! kubectl --insecure-skip-tls-verify get ns kyverno &>/dev/null; then
+            echo "ℹ️  Kyverno nicht gefunden — installiere..."
+            helm repo add kyverno https://kyverno.github.io/kyverno 2>/dev/null || true
+            helm repo update kyverno 2>/dev/null || true
+            helm install kyverno kyverno/kyverno \
+              --namespace kyverno --create-namespace \
+              --version 3.3.4 \
+              --set admissionController.replicas=1 \
+              --kubeconfig /tmp/kubeconfig \
+              --insecure-skip-tls-verify \
+              --wait --timeout 5m
+          else
+            echo "ℹ️  Kyverno Namespace vorhanden — nur Policies applyen"
+          fi
+          kubectl --insecure-skip-tls-verify apply \
+            -f deploy/k8s/security/kyverno/cis-policies.yaml
+          echo "✅ Kyverno Policies aktiv"
+          kubectl --insecure-skip-tls-verify get clusterpolicies
+
+      - name: Fix 3 — NetworkPolicies Default-Deny (CIS 5.3.2)
+        run: |
+          echo "🔒 Default-Deny NetworkPolicies..."
+          kubectl --insecure-skip-tls-verify apply \
+            -f deploy/k8s/security/networkpolicies/
+          echo "✅ NetworkPolicies applied"
+          kubectl --insecure-skip-tls-verify get networkpolicy -A
+
+      - name: CIS Re-Scan nach Patch
+        run: |
+          echo "🔒 CIS Re-Scan..."
+          kubectl --insecure-skip-tls-verify delete job kube-bench-cis \
+            -n kube-system 2>/dev/null || true
+          sleep 3
+          kubectl --insecure-skip-tls-verify apply \
+            -f deploy/k8s/security/kube-bench-job.yaml
+          kubectl --insecure-skip-tls-verify wait job/kube-bench-cis \
+            -n kube-system --for=condition=complete --timeout=5m
+          BENCH_POD=$(kubectl --insecure-skip-tls-verify get pods -n kube-system \
+            -l app=kube-bench -o jsonpath='{.items[0].metadata.name}')
+          echo ""
+          echo "📋 CIS Results nach Live-Patch:"
+          kubectl --insecure-skip-tls-verify logs "$BENCH_POD" -n kube-system | \
+            grep -E "^\[PASS\]|^\[FAIL\]|^\[WARN\]|^==" | head -60 || true
+          PASS=$(kubectl --insecure-skip-tls-verify logs "$BENCH_POD" -n kube-system | grep -c "^\[PASS\]" || echo 0)
+          FAIL=$(kubectl --insecure-skip-tls-verify logs "$BENCH_POD" -n kube-system | grep -c "^\[FAIL\]" || echo 0)
+          WARN=$(kubectl --insecure-skip-tls-verify logs "$BENCH_POD" -n kube-system | grep -c "^\[WARN\]" || echo 0)
+          echo "✅ PASS: $PASS | ❌ FAIL: $FAIL | ⚠️  WARN: $WARN"
+          {
+            echo "## 🔒 CIS Score nach Live-Patch"
+            echo "| | Vorher | Nachher |"
+            echo "|---|---|---|"
+            echo "| ✅ PASS | 46 | $PASS |"
+            echo "| ❌ FAIL | 3 | $FAIL |"
+            echo "| ⚠️ WARN | 42 | $WARN |"
+          } >> $GITHUB_STEP_SUMMARY

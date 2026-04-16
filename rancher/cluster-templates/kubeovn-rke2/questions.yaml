@@ -1,0 +1,228 @@
+questions:
+  # ── Group 1: Cluster ──────────────────────────────────────────
+  - variable: cluster.name
+    label: "Cluster Name"
+    description: "Unique name for the RKE2 cluster"
+    type: string
+    required: true
+    group: "Cluster"
+
+  - variable: cluster.kubernetesVersion
+    label: "Kubernetes Version"
+    description: "RKE2 Kubernetes version"
+    type: enum
+    required: true
+    default: "v1.28.15+rke2r1"
+    options:
+      - "v1.30.8+rke2r1"
+      - "v1.29.12+rke2r1"
+      - "v1.28.15+rke2r1"
+    group: "Cluster"
+
+  # ── Group 2: Sizing ───────────────────────────────────────────
+  - variable: sizing.preset
+    label: "Cluster Size"
+    description: |
+      Small: 1 control-plane + 2 workers
+      Medium: 3 control-plane + 3 workers (HA)
+      Large: 3 control-plane + 5 workers (HA)
+      Custom: specify counts manually
+    type: enum
+    required: true
+    default: "small"
+    options:
+      - "small"
+      - "medium"
+      - "large"
+      - "custom"
+    group: "Sizing"
+
+  - variable: sizing.custom.controlPlaneCount
+    label: "Control Plane Nodes"
+    type: int
+    default: 1
+    min: 1
+    max: 5
+    show_if: "sizing.preset=custom"
+    group: "Sizing"
+
+  - variable: sizing.custom.workerCount
+    label: "Worker Nodes"
+    type: int
+    default: 2
+    min: 1
+    max: 20
+    show_if: "sizing.preset=custom"
+    group: "Sizing"
+
+  - variable: compute.controlPlaneFlavor
+    label: "Control Plane Flavor"
+    description: "OTC ECS flavor for control plane nodes"
+    type: string
+    default: "s3.xlarge.4"
+    group: "Sizing"
+
+  - variable: compute.workerFlavor
+    label: "Worker Flavor"
+    description: "OTC ECS flavor for worker nodes"
+    type: string
+    default: "s3.large.4"
+    group: "Sizing"
+
+  # ── Group 3: OTC Infrastructure ───────────────────────────────
+  - variable: compute.region
+    label: "OTC Region"
+    type: enum
+    default: "eu-ch2"
+    options:
+      - "eu-ch2"
+      - "eu-de"
+      - "eu-nl"
+    group: "OTC Infrastructure"
+
+  - variable: compute.availabilityZone
+    label: "Availability Zone"
+    type: string
+    default: "eu-ch2a"
+    group: "OTC Infrastructure"
+
+  - variable: network.vpcId
+    label: "VPC ID"
+    description: "Pre-existing OTC VPC ID"
+    type: string
+    required: true
+    group: "OTC Infrastructure"
+
+  - variable: network.subnetId
+    label: "Subnet ID"
+    description: "Pre-existing OTC Subnet ID (Neutron network)"
+    type: string
+    required: true
+    group: "OTC Infrastructure"
+
+  - variable: network.securityGroups
+    label: "Security Groups"
+    description: "Comma-separated SG names or IDs. Must allow UDP 6081 (Geneve), TCP 6443, TCP 9345."
+    type: string
+    required: true
+    group: "OTC Infrastructure"
+
+  - variable: compute.rootVolumeSize
+    label: "Root Volume Size (GB)"
+    type: int
+    default: 50
+    min: 40
+    max: 500
+    group: "OTC Infrastructure"
+
+  - variable: compute.rootVolumeType
+    label: "Root Volume Type"
+    type: enum
+    default: "SSD"
+    options:
+      - "SATA"
+      - "SAS"
+      - "SSD"
+    group: "OTC Infrastructure"
+
+  # ── Group 4: OTC Credentials ──────────────────────────────────
+  - variable: cloudCredentialSecretName
+    label: "Cloud Credential Secret"
+    description: "Name of an existing Rancher Cloud Credential (cattle-global-data:cc-xxxxx). Leave empty for inline credentials."
+    type: cloudcredential
+    group: "OTC Credentials"
+
+  - variable: otcCredentials.authUrl
+    label: "Auth URL"
+    type: string
+    default: "https://iam-pub.eu-ch2.sc.otc.t-systems.com/v3"
+    show_if: "cloudCredentialSecretName="
+    group: "OTC Credentials"
+
+  - variable: otcCredentials.domainName
+    label: "Domain Name"
+    type: string
+    required: true
+    show_if: "cloudCredentialSecretName="
+    group: "OTC Credentials"
+
+  - variable: otcCredentials.username
+    label: "Username"
+    type: string
+    show_if: "cloudCredentialSecretName="
+    group: "OTC Credentials"
+
+  - variable: otcCredentials.password
+    label: "Password"
+    type: password
+    show_if: "cloudCredentialSecretName="
+    group: "OTC Credentials"
+
+  - variable: otcCredentials.projectId
+    label: "Project ID"
+    type: string
+    required: true
+    show_if: "cloudCredentialSecretName="
+    group: "OTC Credentials"
+
+  - variable: otcCredentials.projectName
+    label: "Project Name"
+    type: string
+    show_if: "cloudCredentialSecretName="
+    group: "OTC Credentials"
+
+  # ── Group 5: Cloud Controller Manager ─────────────────────────
+  - variable: ccm.enabled
+    label: "Deploy OTC Cloud Controller Manager"
+    type: boolean
+    default: true
+    group: "Cloud Controller Manager"
+
+  - variable: ccm.elb.subnetId
+    label: "ELB Subnet ID"
+    description: "Subnet ID for ELB VIP placement"
+    type: string
+    show_if: "ccm.enabled=true"
+    group: "Cloud Controller Manager"
+
+  - variable: ccm.elb.networkId
+    label: "ELB Network ID"
+    description: "VPC Network ID for ELB backend"
+    type: string
+    show_if: "ccm.enabled=true"
+    group: "Cloud Controller Manager"
+
+  - variable: ccm.elb.floatingNetworkId
+    label: "ELB Floating Network ID"
+    description: "admin_external_net ID for EIP allocation"
+    type: string
+    show_if: "ccm.enabled=true"
+    group: "Cloud Controller Manager"
+
+  # ── Group 6: KubeOVN ──────────────────────────────────────────
+  - variable: kubeovn.podSubnet
+    label: "Pod Subnet"
+    description: "CIDR for Pod IPs (must not overlap with VPC or service subnet)"
+    type: string
+    default: "10.244.0.0/16"
+    group: "KubeOVN"
+
+  - variable: kubeovn.joinSubnet
+    label: "Join Subnet"
+    description: "CIDR for node-to-ovn-central communication"
+    type: string
+    default: "100.64.0.0/16"
+    group: "KubeOVN"
+
+  - variable: kubeovn.ovnCentral.requests.cpu
+    label: "ovn-central CPU Request"
+    description: "Reduce to 100m for small instances (s3.large.*)"
+    type: string
+    default: "100m"
+    group: "KubeOVN"
+
+  - variable: kubeovn.ovnCentral.requests.memory
+    label: "ovn-central Memory Request"
+    type: string
+    default: "100Mi"
+    group: "KubeOVN"

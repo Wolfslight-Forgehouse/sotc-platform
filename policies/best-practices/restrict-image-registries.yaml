@@ -1,0 +1,45 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: restrict-image-registries
+  annotations:
+    policies.kyverno.io/title: Restrict Image Registries
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      Pulling images from untrusted registries can introduce vulnerabilities
+      or malicious code. This policy restricts container images to approved
+      registries: ghcr.io, docker.io, quay.io, and registry.k8s.io.
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: restrict-registries
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kube-public
+                - kube-node-lease
+                - kyverno
+                - cattle-system
+                - calico-system
+      validate:
+        message: >-
+          Images must be pulled from approved registries: ghcr.io, docker.io,
+          quay.io, or registry.k8s.io.
+        pattern:
+          spec:
+            containers:
+              - image: "ghcr.io/* | docker.io/* | quay.io/* | registry.k8s.io/*"
+            =(initContainers):
+              - image: "ghcr.io/* | docker.io/* | quay.io/* | registry.k8s.io/*"
+            =(ephemeralContainers):
+              - image: "ghcr.io/* | docker.io/* | quay.io/* | registry.k8s.io/*"

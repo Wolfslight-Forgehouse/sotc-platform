@@ -1,0 +1,284 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: demo-html
+  namespace: default
+data:
+  index.html: |
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SkyNet Labs // Swiss OTC Node</title>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap');
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body { background: #000; color: #00ff41; font-family: 'Share Tech Mono', monospace; overflow-x: hidden; min-height: 100vh; }
+      #matrix-canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; opacity: 0.18; }
+      .container { position: relative; z-index: 10; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; gap: 20px; padding: 20px; }
+      .glitch-title { font-family: 'Orbitron', monospace; font-size: clamp(2rem, 6vw, 5rem); font-weight: 900; text-transform: uppercase; color: #00ff41; text-shadow: 0 0 10px #00ff41, 0 0 30px #00ff41, 0 0 60px #00ff41; animation: glitch 3s infinite; letter-spacing: 0.15em; }
+      @keyframes glitch { 0%, 90%, 100% { text-shadow: 0 0 10px #00ff41, 0 0 30px #00ff41, 0 0 60px #00ff41; transform: translate(0); } 92% { transform: translate(-3px, 1px); text-shadow: -3px 0 #ff0080, 3px 0 #00cfff; } 94% { transform: translate(3px, -1px); text-shadow: 3px 0 #ff0080, -3px 0 #00cfff; } 96% { transform: translate(-2px, 2px); text-shadow: -2px 0 #ff0080, 2px 0 #00cfff; } 98% { transform: translate(0); text-shadow: 0 0 10px #00ff41, 0 0 30px #00ff41; } }
+      .subtitle { font-size: clamp(0.7rem, 2vw, 1rem); color: #00cfff; letter-spacing: 0.3em; text-transform: uppercase; text-shadow: 0 0 10px #00cfff; animation: pulse 2s ease-in-out infinite; }
+      @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+      .panel { background: rgba(0,255,65,0.03); border: 1px solid #00ff41; padding: 20px 40px; min-width: min(500px, 90vw); max-width: 90vw; box-shadow: 0 0 20px rgba(0,255,65,0.2), inset 0 0 20px rgba(0,255,65,0.03); }
+      .panel-title { font-size: 0.7rem; color: #888; letter-spacing: 0.3em; text-transform: uppercase; margin-bottom: 12px; border-bottom: 1px solid #222; padding-bottom: 8px; }
+      .status-line { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(0,255,65,0.1); font-size: 0.85rem; gap: 20px; }
+      .status-line:last-child { border-bottom: none; }
+      .label { color: #888; white-space: nowrap; }
+      .value { color: #00ff41; text-shadow: 0 0 8px #00ff41; text-align: right; }
+      .value.cyan { color: #00cfff; text-shadow: 0 0 8px #00cfff; }
+      .value.pink { color: #ff0080; text-shadow: 0 0 8px #ff0080; }
+      .value.online { color: #00ff41; animation: blink 1.5s step-end infinite; }
+      @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+      .obs-panel { background: rgba(0,207,255,0.03); border: 1px solid #00cfff; padding: 20px 40px; min-width: min(500px, 90vw); max-width: 90vw; box-shadow: 0 0 20px rgba(0,207,255,0.2); }
+      .obs-panel .panel-title { color: #00cfff; border-bottom-color: #00cfff44; }
+      #obs-log { font-size: 0.8rem; color: #00cfff; max-height: 200px; overflow-y: auto; }
+      #obs-log .log-entry { padding: 3px 0; border-bottom: 1px solid rgba(0,207,255,0.1); }
+      #obs-log .log-entry:last-child { border-bottom: none; }
+      #obs-status { font-size: 0.75rem; color: #888; margin-bottom: 8px; }
+      .obs-ok { color: #00ff41 !important; text-shadow: 0 0 8px #00ff41; }
+      .obs-err { color: #ff0080 !important; }
+      .terminal { width: min(500px, 90vw); font-size: 0.8rem; color: #00ff41; opacity: 0.8; height: 5em; overflow: hidden; }
+      .terminal-line { white-space: nowrap; overflow: hidden; animation: typing 0.5s steps(60) forwards; opacity: 0; }
+      @keyframes typing { from { width: 0; opacity: 1; } to { width: 100%; opacity: 1; } }
+      .corner-deco { position: fixed; width: 60px; height: 60px; z-index: 5; opacity: 0.6; }
+      .corner-deco.tl { top: 20px; left: 20px; border-top: 2px solid #00ff41; border-left: 2px solid #00ff41; }
+      .corner-deco.tr { top: 20px; right: 20px; border-top: 2px solid #00ff41; border-right: 2px solid #00ff41; }
+      .corner-deco.bl { bottom: 20px; left: 20px; border-bottom: 2px solid #00ff41; border-left: 2px solid #00ff41; }
+      .corner-deco.br { bottom: 20px; right: 20px; border-bottom: 2px solid #00ff41; border-right: 2px solid #00ff41; }
+      .scan-line { position: fixed; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, transparent, #00ff41, transparent); z-index: 20; animation: scan 4s linear infinite; opacity: 0.4; }
+      @keyframes scan { 0% { top: 0; } 100% { top: 100vh; } }
+      .node-id { font-size: 0.65rem; color: #333; letter-spacing: 0.2em; margin-top: 10px; }
+    </style>
+    </head>
+    <body>
+    <canvas id="matrix-canvas"></canvas>
+    <div class="scan-line"></div>
+    <div class="corner-deco tl"></div>
+    <div class="corner-deco tr"></div>
+    <div class="corner-deco bl"></div>
+    <div class="corner-deco br"></div>
+    <div class="container">
+      <div class="glitch-title">SkyNet Labs</div>
+      <div class="subtitle">// Swiss OTC · RKE2 Node · Cloud Controller Active //</div>
+
+      <div class="panel">
+        <div class="panel-title">// Cluster Status</div>
+        <div class="status-line"><span class="label">CLUSTER</span><span class="value">rke2-dev · v1.34.5+rke2r1</span></div>
+        <div class="status-line"><span class="label">PROVIDER</span><span class="value cyan">Swiss OTC · eu-ch2a</span></div>
+        <div class="status-line"><span class="label">CLOUD CONTROLLER</span><span class="value online">● ONLINE</span></div>
+        <div class="status-line"><span class="label">ELB ENDPOINT</span><span class="value pink" id="eip">detecting...</span></div>
+        <div class="status-line"><span class="label">NODES</span><span class="value">3 · READY</span></div>
+        <div class="status-line"><span class="label">CNI</span><span class="value cyan">Kube-OVN (Geneve)</span></div>
+        <div class="status-line"><span class="label">EVS STORAGE</span><span class="value cyan">Cinder CSI · Block RWO</span></div>
+        <div class="status-line"><span class="label">OBS STORAGE</span><span class="value online">● MOUNTED</span></div>
+      </div>
+
+      <div class="obs-panel">
+        <div class="panel-title">// OBS Object Storage — Live Write Log</div>
+        <div id="obs-status">Lade OBS Log...</div>
+        <div id="obs-log"></div>
+      </div>
+
+      <div class="terminal" id="terminal"></div>
+      <div class="node-id" id="uptime">INITIALIZING...</div>
+    </div>
+    <script>
+    // Matrix
+    const canvas = document.getElementById('matrix-canvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+    const cols = Math.floor(canvas.width / 20);
+    const drops = Array(cols).fill(1);
+    const chars = 'アイウエオカキクケコ0123456789ABCDEF<>{}[]|/\\';
+    function drawMatrix() {
+      ctx.fillStyle = 'rgba(0,0,0,0.05)'; ctx.fillRect(0,0,canvas.width,canvas.height);
+      drops.forEach((y,i) => {
+        const char = chars[Math.floor(Math.random()*chars.length)];
+        ctx.fillStyle = Math.random()>0.95 ? '#ffffff' : '#00ff41';
+        ctx.font = '15px Share Tech Mono'; ctx.fillText(char, i*20, y*20);
+        if (y*20 > canvas.height && Math.random()>0.975) drops[i]=0; drops[i]++;
+      });
+    }
+    setInterval(drawMatrix, 45);
+    window.addEventListener('resize', () => { canvas.width=window.innerWidth; canvas.height=window.innerHeight; });
+
+    // EIP detect
+    fetch('/obs-data/obs-log.json').then(r=>r.json()).catch(()=>null).then(d=>{
+      if(d && d.eip) document.getElementById('eip').textContent = d.eip;
+      else document.getElementById('eip').textContent = window.location.hostname;
+    });
+
+    // OBS Live Log
+    async function loadOBSLog() {
+      try {
+        const r = await fetch('/obs-data/obs-log.json?t=' + Date.now());
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const data = await r.json();
+        const statusEl = document.getElementById('obs-status');
+        const logEl = document.getElementById('obs-log');
+        statusEl.textContent = `Letzter Write: ${data.last_write || 'n/a'} · Writes gesamt: ${data.write_count || 0}`;
+        statusEl.className = 'obs-ok';
+        logEl.innerHTML = (data.entries || []).slice(-8).reverse().map(e =>
+          `<div class="log-entry">▶ ${e}</div>`
+        ).join('');
+      } catch(e) {
+        document.getElementById('obs-status').textContent = 'OBS: ' + e.message;
+        document.getElementById('obs-status').className = 'obs-err';
+      }
+    }
+    loadOBSLog();
+    setInterval(loadOBSLog, 10000);
+
+    // Terminal
+    const lines = [
+      '> kubectl get pvc -n default',
+      '  demo-obs-pvc   Bound   pvc-513d...   10Gi   RWX   csi-obs',
+      '  demo-evs-pvc   Bound   pvc-...       10Gi   RWO   csi-cinder-sc-delete',
+      '> obs-writer: writing entry to OBS bucket...',
+      '> ✓ obs-log.json synced via GeeseFS · all systems nominal',
+    ];
+    let lineIdx = 0;
+    const term = document.getElementById('terminal');
+    function addLine() {
+      if (lineIdx >= lines.length) lineIdx = 0;
+      const el = document.createElement('div'); el.className = 'terminal-line';
+      el.textContent = lines[lineIdx++];
+      el.style.animationDuration = `${0.03*lines[lineIdx-1].length+0.2}s`;
+      term.appendChild(el);
+      if (term.children.length > 5) term.removeChild(term.children[0]);
+      setTimeout(addLine, 1800);
+    }
+    setTimeout(addLine, 800);
+
+    // Uptime
+    const start = Date.now();
+    setInterval(() => {
+      const s = Math.floor((Date.now()-start)/1000);
+      const h = String(Math.floor(s/3600)).padStart(2,'0');
+      const m = String(Math.floor((s%3600)/60)).padStart(2,'0');
+      const sec = String(s%60).padStart(2,'0');
+      document.getElementById('uptime').textContent = `SESSION UPTIME: ${h}:${m}:${sec}  ·  ${new Date().toISOString()}`;
+    }, 1000);
+    </script>
+    </body>
+    </html>
+
+  nginx.conf: |
+    server {
+        listen 80;
+        root /usr/share/nginx/html;
+        index index.html;
+
+        # OBS-Daten (von gemounteter PVC)
+        location /obs-data/ {
+            alias /obs-mount/;
+            add_header Cache-Control "no-store";
+        }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-app
+  namespace: default
+  labels:
+    app: demo
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: demo
+  template:
+    metadata:
+      labels:
+        app: demo
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:alpine
+        ports:
+        - containerPort: 80
+        volumeMounts:
+        - name: html
+          mountPath: /usr/share/nginx/html
+        - name: nginx-conf
+          mountPath: /etc/nginx/conf.d/default.conf
+          subPath: nginx.conf
+        - name: obs-mount
+          mountPath: /obs-mount
+      - name: obs-writer
+        image: busybox:latest
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          COUNT=0
+          EIP=$(wget -qO- http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/null || echo "unknown")
+          mkdir -p /obs-mount
+          while true; do
+            COUNT=$((COUNT + 1))
+            TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+            NODE=$(hostname)
+            ENTRY="[$TS] write #${COUNT} from pod ${NODE}"
+
+            # JSON log aufbauen
+            if [ -f /obs-mount/obs-log.json ]; then
+              PREV_COUNT=$(grep -o '"write_count":[0-9]*' /obs-mount/obs-log.json | grep -o '[0-9]*' || echo "0")
+              PREV_ENTRIES=$(grep -o '"entries":\[.*\]' /obs-mount/obs-log.json | sed 's/"entries":\[//;s/\]$//' || echo "")
+              COUNT=$((PREV_COUNT + 1))
+            else
+              PREV_ENTRIES=""
+              COUNT=1
+            fi
+
+            # Max 20 Entries behalten
+            NEW_ENTRIES="\"$ENTRY\""
+            if [ -n "$PREV_ENTRIES" ]; then
+              ALL="$NEW_ENTRIES,$PREV_ENTRIES"
+              # trim to 20
+              NEW_ENTRIES=$(echo "$ALL" | tr ',' '\n' | head -20 | tr '\n' ',' | sed 's/,$//')
+            fi
+
+            printf '{"write_count":%d,"last_write":"%s","eip":"%s","entries":[%s]}\n' \
+              "$COUNT" "$TS" "$EIP" "$NEW_ENTRIES" > /obs-mount/obs-log.json.tmp
+            mv /obs-mount/obs-log.json.tmp /obs-mount/obs-log.json
+
+            echo "[$TS] OBS write #${COUNT} OK"
+            sleep 30
+          done
+        volumeMounts:
+        - name: obs-mount
+          mountPath: /obs-mount
+      volumes:
+      - name: html
+        configMap:
+          name: demo-html
+          items:
+          - key: index.html
+            path: index.html
+      - name: nginx-conf
+        configMap:
+          name: demo-html
+          items:
+          - key: nginx.conf
+            path: nginx.conf
+      - name: obs-mount
+        persistentVolumeClaim:
+          claimName: demo-obs-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: demo-lb
+  namespace: default
+  annotations:
+    otc.io/eip-bandwidth: "5"
+spec:
+  type: LoadBalancer
+  selector:
+    app: demo
+  ports:
+  - port: 80
+    targetPort: 80

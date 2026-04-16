@@ -1,0 +1,137 @@
+name: CIS Benchmark Scan
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type SCAN to run CIS benchmark on existing cluster"
+        required: true
+
+jobs:
+  cis-scan:
+    name: CIS Benchmark (kube-bench)
+    runs-on: ubuntu-latest
+    if: github.event.inputs.confirm == 'SCAN'
+
+    env:
+      OS_ACCESS_KEY:     ${{ secrets.OS_ACCESS_KEY }}
+      OS_SECRET_KEY:     ${{ secrets.OS_SECRET_KEY }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # SSH Agent — Base64-encoded Key (gleiche Methode wie infra-apply.yml)
+      - name: Setup SSH agent
+        env:
+          SSH_PRIVATE_KEY_B64: ${{ secrets.SSH_PRIVATE_KEY_B64 }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          echo "$SSH_PRIVATE_KEY_B64" | base64 -d > ~/.ssh/rke2_key
+          chmod 600 ~/.ssh/rke2_key
+          eval "$(ssh-agent -s)"
+          ssh-add ~/.ssh/rke2_key
+          echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" >> $GITHUB_ENV
+          echo "SSH_AGENT_PID=$SSH_AGENT_PID" >> $GITHUB_ENV
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7"
+          terraform_wrapper: false
+
+      - name: Read cluster IPs from Terraform state
+        id: ips
+        env:
+          AWS_ACCESS_KEY_ID:      ${{ secrets.OTC_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY:  ${{ secrets.OTC_SECRET_KEY }}
+          TF_VAR_access_key:      ${{ secrets.OTC_ACCESS_KEY }}
+          TF_VAR_secret_key:      ${{ secrets.OTC_SECRET_KEY }}
+          TF_VAR_project_id:      ${{ secrets.OTC_PROJECT_ID }}
+          TF_VAR_ssh_public_key:  ${{ secrets.SSH_PUBLIC_KEY }}
+          TF_VAR_rke2_token:      ${{ secrets.RKE2_TOKEN }}
+          TF_VAR_ghcr_pull_token: ${{ secrets.GHCR_PULL_TOKEN }}
+          TF_VAR_domain_name:     ${{ secrets.OTC_DOMAIN_NAME }}
+        working-directory: terraform/environments/dev
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ secrets.OBS_TFSTATE_BUCKET }}" \
+            -backend-config="access_key=${{ secrets.OS_ACCESS_KEY }}" \
+            -backend-config="secret_key=${{ secrets.OS_SECRET_KEY }}"
+          echo "bastion_ip=$(terraform output -raw bastion_ip)" >> $GITHUB_OUTPUT
+          echo "master_ip=$(terraform output -raw master_ip)"   >> $GITHUB_OUTPUT
+
+      - name: Open kubectl tunnel via Bastion
+        env:
+          BASTION_IP: ${{ steps.ips.outputs.bastion_ip }}
+          MASTER_IP:  ${{ steps.ips.outputs.master_ip }}
+        run: |
+          ssh-keyscan -H "$BASTION_IP" >> ~/.ssh/known_hosts 2>/dev/null || true
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+            -J "ubuntu@${BASTION_IP}" "ubuntu@${MASTER_IP}" \
+            "sudo cat /etc/rancher/rke2/rke2.yaml" 2>/dev/null | \
+            sed "s/127.0.0.1/${MASTER_IP}/g" > /tmp/kubeconfig
+          echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
+
+          ssh -o StrictHostKeyChecking=no -fNT \
+            -L 6443:${MASTER_IP}:6443 \
+            -o ExitOnForwardFailure=yes \
+            -o ServerAliveInterval=60 \
+            ubuntu@${BASTION_IP} &
+          sed -i "s/${MASTER_IP}/127.0.0.1/g" /tmp/kubeconfig
+          sleep 5
+          echo "BASTION_IP=${BASTION_IP}" >> $GITHUB_ENV
+          echo "MASTER_IP=${MASTER_IP}" >> $GITHUB_ENV
+
+      - name: Run CIS Benchmark (kube-bench)
+        run: |
+          echo "🔒 CIS Benchmark — rke2-cis-1.7"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+          # Alten Job löschen (idempotent)
+          kubectl --insecure-skip-tls-verify delete job kube-bench-cis \
+            -n kube-system 2>/dev/null || true
+          sleep 3
+
+          # Job starten
+          kubectl --insecure-skip-tls-verify apply -f deploy/k8s/security/kube-bench-job.yaml
+
+          echo "⏳ Warte auf Job-Completion (max 5 Min)..."
+          kubectl --insecure-skip-tls-verify wait job/kube-bench-cis \
+            -n kube-system --for=condition=complete --timeout=5m
+
+          # Ergebnisse
+          BENCH_POD=$(kubectl --insecure-skip-tls-verify get pods -n kube-system \
+            -l app=kube-bench --field-selector=status.phase=Succeeded \
+            -o jsonpath='{.items[0].metadata.name}')
+
+          echo ""
+          echo "📋 CIS Benchmark Results (PASS/FAIL/WARN):"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          kubectl --insecure-skip-tls-verify logs "$BENCH_POD" -n kube-system | \
+            grep -E "^\[PASS\]|^\[FAIL\]|^\[WARN\]|^==" || true
+
+          echo ""
+          echo "📊 Summary:"
+          echo "━━━━━━━━━━━"
+          kubectl --insecure-skip-tls-verify logs "$BENCH_POD" -n kube-system | \
+            grep -E "total:|== Summary ==" || true
+
+          # GitHub Step Summary
+          {
+            echo "## 🔒 CIS Benchmark — rke2-cis-1.7"
+            echo ""
+            echo "**Cluster:** \`${MASTER_IP}\` | **Bastion:** \`${BASTION_IP}\`"
+            echo ""
+            echo '```'
+            kubectl --insecure-skip-tls-verify logs "$BENCH_POD" -n kube-system | \
+              grep -E "^\[PASS\]|^\[FAIL\]|^\[WARN\]|^==|total:" || true
+            echo '```'
+          } >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload CIS Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: cis-benchmark-report
+          path: /tmp/cis-report.txt
+          retention-days: 30
+        continue-on-error: true

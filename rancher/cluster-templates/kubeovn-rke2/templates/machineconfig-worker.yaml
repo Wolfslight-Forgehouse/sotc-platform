@@ -1,0 +1,24 @@
+apiVersion: rke-machine-config.cattle.io/v1
+kind: OpentelekomcloudConfig
+metadata:
+  name: {{ include "cluster.fullname" . }}-worker
+  namespace: fleet-default
+spec:
+  region: {{ .Values.compute.region | quote }}
+  availabilityZone: {{ .Values.compute.availabilityZone | quote }}
+  flavorName: {{ .Values.compute.workerFlavor | quote }}
+  imageName: {{ .Values.compute.imageName | quote }}
+  vpcId: {{ .Values.network.vpcId | quote }}
+  subnetId: {{ .Values.network.subnetId | quote }}
+  secGroups: {{ .Values.network.securityGroups | quote }}
+  sshUser: {{ .Values.compute.sshUser | quote }}
+  rootVolumeSize: {{ .Values.compute.rootVolumeSize }}
+  rootVolumeType: {{ .Values.compute.rootVolumeType | quote }}
+  {{- if not .Values.cloudCredentialSecretName }}
+  authUrl: {{ .Values.otcCredentials.authUrl | quote }}
+  domainName: {{ .Values.otcCredentials.domainName | quote }}
+  username: {{ .Values.otcCredentials.username | quote }}
+  password: {{ .Values.otcCredentials.password | quote }}
+  projectId: {{ .Values.otcCredentials.projectId | quote }}
+  projectName: {{ .Values.otcCredentials.projectName | quote }}
+  {{- end }}

@@ -1,0 +1,40 @@
+{{- if .Values.ccm.enabled }}
+apiVersion: management.cattle.io/v3
+kind: ManagedChart
+metadata:
+  name: {{ include "cluster.fullname" . }}-otc-ccm
+  namespace: fleet-default
+  annotations:
+    fleet.cattle.io/bundle-depends-on: {{ include "cluster.fullname" . }}-kube-ovn
+spec:
+  chart: otc-cloud-manager
+  repoName: wolfslight-forgehouse
+  releaseName: otc-cloud-manager
+  defaultNamespace: kube-system
+  targets:
+    - clusterName: {{ include "cluster.fullname" . }}
+  valuesContent: |
+    image:
+      repository: {{ .Values.ccm.image.repository }}
+      tag: {{ .Values.ccm.image.tag | quote }}
+    otc:
+      {{- if .Values.otcCredentials.accessKey }}
+      accessKey: {{ .Values.otcCredentials.accessKey | quote }}
+      secretKey: {{ .Values.otcCredentials.secretKey | quote }}
+      {{- else }}
+      authUrl: {{ .Values.otcCredentials.authUrl | quote }}
+      username: {{ .Values.otcCredentials.username | quote }}
+      password: {{ .Values.otcCredentials.password | quote }}
+      {{- end }}
+      projectId: {{ .Values.otcCredentials.projectId | quote }}
+      domainName: {{ .Values.otcCredentials.domainName | quote }}
+      region: {{ .Values.compute.region | quote }}
+      elb:
+        subnetId: {{ .Values.ccm.elb.subnetId | quote }}
+        networkId: {{ .Values.ccm.elb.networkId | quote }}
+        floatingNetworkId: {{ .Values.ccm.elb.floatingNetworkId | quote }}
+    cluster:
+      name: {{ include "cluster.fullname" . | quote }}
+    resources:
+{{ .Values.ccm.resources | toYaml | indent 6 }}
+{{- end }}

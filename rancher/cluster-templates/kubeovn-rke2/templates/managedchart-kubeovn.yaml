@@ -1,0 +1,41 @@
+{{- if .Values.kubeovn.enabled }}
+apiVersion: management.cattle.io/v3
+kind: ManagedChart
+metadata:
+  name: {{ include "cluster.fullname" . }}-kube-ovn
+  namespace: fleet-default
+spec:
+  chart: kube-ovn
+  version: {{ .Values.kubeovn.version | quote }}
+  repoName: kubeovn
+  releaseName: kube-ovn
+  defaultNamespace: kube-system
+  targets:
+    - clusterName: {{ include "cluster.fullname" . }}
+  set:
+    # RKE2-specific paths — without these, kube-ovn-cni readiness probe fails
+    # because it checks /var/lib/kubelet which does not exist on RKE2
+    kubelet_conf.KUBELET_DIR: {{ .Values.kubeovn.kubeletDir | quote }}
+    cni_conf.CNI_CONF_DIR: {{ .Values.kubeovn.cniConfDir | quote }}
+    cni_conf.CNI_BIN_DIR: {{ .Values.kubeovn.cniBinDir | quote }}
+    # Network configuration
+    networking.NET_STACK: "ipv4"
+    networking.NETWORK_TYPE: {{ .Values.kubeovn.tunnelType | quote }}
+    networking.DEFAULT_SUBNET: {{ .Values.kubeovn.podSubnet | quote }}
+    networking.JOIN_SUBNET: {{ .Values.kubeovn.joinSubnet | quote }}
+    networking.SVC_CIDR: {{ .Values.kubeovn.serviceSubnet | quote }}
+    networking.NP_IMPLEMENTATION: {{ .Values.kubeovn.networkPolicy | quote }}
+    # Resource tuning for smaller OTC instances
+    ovn-central.requests.cpu: {{ .Values.kubeovn.ovnCentral.requests.cpu | quote }}
+    ovn-central.requests.memory: {{ .Values.kubeovn.ovnCentral.requests.memory | quote }}
+    ovn-central.limits.cpu: {{ .Values.kubeovn.ovnCentral.limits.cpu | quote }}
+    ovn-central.limits.memory: {{ .Values.kubeovn.ovnCentral.limits.memory | quote }}
+  diff:
+    comparePatches:
+      - apiVersion: apps/v1
+        kind: DaemonSet
+        name: kube-ovn-cni
+        namespace: kube-system
+        jsonPointers:
+          - /spec/template/spec/containers/0/resources
+{{- end }}

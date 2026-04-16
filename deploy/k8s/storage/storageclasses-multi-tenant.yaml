@@ -1,0 +1,69 @@
+# Multi-Tenant StorageClasses für OTC OBS
+# Jede StorageClass nutzt ein separates Secret mit eigenen AK/SK
+# Secrets müssen vorher erstellt werden:
+#   kubectl create secret generic csi-s3-team-<name> --namespace kube-system \
+#     --from-literal=accessKeyID=<AK> \
+#     --from-literal=secretAccessKey=<SK> \
+#     --from-literal=endpoint=https://obs.eu-ch2.sc.otc.t-systems.com \
+#     --from-literal=region=eu-ch2
+
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: csi-obs-team-alpha
+  annotations:
+    storageclass.kubernetes.io/description: "OTC OBS für Team Alpha (isoliert)"
+provisioner: ru.yandex.s3.csi
+reclaimPolicy: Delete
+volumeBindingMode: Immediate
+parameters:
+  mounter: geesefs
+  options: "--memory-limit 1000 --dir-mode 0777 --file-mode 0666"
+  csi.storage.k8s.io/provisioner-secret-name: csi-s3-team-alpha
+  csi.storage.k8s.io/provisioner-secret-namespace: kube-system
+  csi.storage.k8s.io/controller-publish-secret-name: csi-s3-team-alpha
+  csi.storage.k8s.io/controller-publish-secret-namespace: kube-system
+  csi.storage.k8s.io/node-stage-secret-name: csi-s3-team-alpha
+  csi.storage.k8s.io/node-stage-secret-namespace: kube-system
+  csi.storage.k8s.io/node-publish-secret-name: csi-s3-team-alpha
+  csi.storage.k8s.io/node-publish-secret-namespace: kube-system
+
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: csi-obs-team-beta
+  annotations:
+    storageclass.kubernetes.io/description: "OTC OBS für Team Beta (isoliert)"
+provisioner: ru.yandex.s3.csi
+reclaimPolicy: Delete
+volumeBindingMode: Immediate
+parameters:
+  mounter: geesefs
+  options: "--memory-limit 1000 --dir-mode 0777 --file-mode 0666"
+  csi.storage.k8s.io/provisioner-secret-name: csi-s3-team-beta
+  csi.storage.k8s.io/provisioner-secret-namespace: kube-system
+  csi.storage.k8s.io/controller-publish-secret-name: csi-s3-team-beta
+  csi.storage.k8s.io/controller-publish-secret-namespace: kube-system
+  csi.storage.k8s.io/node-stage-secret-name: csi-s3-team-beta
+  csi.storage.k8s.io/node-stage-secret-namespace: kube-system
+  csi.storage.k8s.io/node-publish-secret-name: csi-s3-team-beta
+  csi.storage.k8s.io/node-publish-secret-namespace: kube-system
+
+---
+# Optional: singleBucket Variante (alle PVCs im gleichen Bucket, Subdir-Isolation)
+# apiVersion: storage.k8s.io/v1
+# kind: StorageClass
+# metadata:
+#   name: csi-obs-team-alpha-shared
+# provisioner: ru.yandex.s3.csi
+# parameters:
+#   mounter: geesefs
+#   singleBucket: "k8s-alpha-shared-bucket"
+#   csi.storage.k8s.io/provisioner-secret-name: csi-s3-team-alpha
+#   csi.storage.k8s.io/provisioner-secret-namespace: kube-system
+#   csi.storage.k8s.io/node-stage-secret-name: csi-s3-team-alpha
+#   csi.storage.k8s.io/node-stage-secret-namespace: kube-system
+#   csi.storage.k8s.io/node-publish-secret-name: csi-s3-team-alpha
+#   csi.storage.k8s.io/node-publish-secret-namespace: kube-system

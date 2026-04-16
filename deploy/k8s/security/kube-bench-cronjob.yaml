@@ -1,0 +1,64 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: kube-bench-daily
+  namespace: kube-system
+  labels:
+    app: kube-bench
+    component: cis-scanner
+spec:
+  schedule: "0 2 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: kube-bench
+        spec:
+          hostPID: true
+          nodeSelector:
+            node-role.kubernetes.io/control-plane: "true"
+          tolerations:
+            - key: node-role.kubernetes.io/control-plane
+              operator: Exists
+              effect: NoSchedule
+          restartPolicy: Never
+          containers:
+            - name: kube-bench
+              image: aquasec/kube-bench:latest
+              command:
+                - kube-bench
+                - run
+                - --targets
+                - master,etcd,node,policies
+                - --benchmark
+                - rke2-cis-1.7
+              volumeMounts:
+                - name: var-lib-rancher
+                  mountPath: /var/lib/rancher
+                  readOnly: true
+                - name: etc-rancher
+                  mountPath: /etc/rancher
+                  readOnly: true
+                - name: var-lib-etcd
+                  mountPath: /var/lib/etcd
+                  readOnly: true
+                - name: etc-systemd
+                  mountPath: /etc/systemd
+                  readOnly: true
+          volumes:
+            - name: var-lib-rancher
+              hostPath:
+                path: /var/lib/rancher
+            - name: etc-rancher
+              hostPath:
+                path: /etc/rancher
+            - name: var-lib-etcd
+              hostPath:
+                path: /var/lib/etcd
+            - name: etc-systemd
+              hostPath:
+                path: /etc/systemd

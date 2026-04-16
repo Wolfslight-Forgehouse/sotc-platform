@@ -1,0 +1,36 @@
+# Traefik Ingress Controller — OTC Swiss-spezifische Werte
+# Helm Chart: traefik/traefik v33.2.1
+
+ingressClass:
+  enabled: true
+  isDefaultClass: true
+
+service:
+  type: LoadBalancer
+  # OTC CCM erstellt automatisch einen ELB
+  # annotations:
+  #   kubernetes.io/elb-class: union
+
+providers:
+  kubernetesIngress:
+    enabled: true
+  kubernetesCRD:
+    enabled: true
+
+logs:
+  access:
+    enabled: true
+
+ports:
+  web:
+    port: 8000
+    expose:
+      default: true
+    exposedPort: 80
+  websecure:
+    port: 8443
+    expose:
+      default: true
+    exposedPort: 443
+    tls:
+      enabled: true
