@@ -9,7 +9,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/Wolfslight-Forgehouse/rke2-sotc-cloud-manager
+    repoURL: https://github.com/Wolfslight-Forgehouse/sotc-platform
     targetRevision: main
     path: argocd/apps
   destination:
