@@ -107,6 +107,84 @@ kubectl delete pods -n kube-system -l app=kube-ovn-cni
 kubectl delete pods -n kube-system -l app=kube-ovn-controller
 ```
 
+### Problem: `disable-kube-proxy: true` bricht Kube-OVN v1.13 iptables-Mode
+
+**Entdeckt**: E2E-Test 2026-04-16 auf RKE2 v1.34 + Kube-OVN v1.13.0
+
+**Symptom:**
+```
+kube-ovn-controller log:
+  failed to dial apiserver "https://10.43.0.1:443": timed out dialing host
+  (wiederholt alle 3s → CrashLoopBackOff)
+```
+
+**Root Cause:**
+Kube-OVN v1.13 mit `NP_IMPLEMENTATION=iptables` ist **KEIN** kube-proxy replacement.
+Ohne kube-proxy gibt es keine Route für die kube-apiserver ClusterIP (`10.43.0.1`) —
+der Controller kann die API nicht erreichen, alles crasht in Kaskade.
+
+**Fix:**
+In der RKE2 `/etc/rancher/rke2/config.yaml` darf **kein** `disable-kube-proxy: true` stehen,
+wenn Kube-OVN mit iptables läuft. Der richtige Config-Block:
+```yaml
+token: <rke2-token>
+cloud-provider-name: external
+cni: none
+# KEIN disable-kube-proxy hier!
+tls-san:
+  - <master-ip>
+```
+
+Nur für **Cilium mit `kubeProxyReplacement: true`** darf `disable-kube-proxy: true` gesetzt werden.
+
+### Problem: Helm Chart v1.13.0 — volumeMount/CNI_CONF_DIR Mismatch
+
+**Entdeckt**: E2E-Test 2026-04-16
+
+**Symptom:**
+```
+kube-ovn-cni init log:
+  Installing cni config file "/kube-ovn/01-kube-ovn.conflist"
+    to "/var/lib/rancher/rke2/agent/etc/cni/net.d/01-kube-ovn.conflist"
+  E failed to mv cni config file
+    err="open /var/lib/rancher/rke2/agent/etc/cni/net.d/01-kube-ovn.conflist:
+         no such file or directory"
+```
+
+**Root Cause:**
+Der Helm Chart setzt zwar `cni_conf.CNI_CONF_DIR=/var/lib/rancher/rke2/...` als ENV-Variable,
+**aligned aber nicht die zugehörige volumeMount** — die bleibt bei `/etc/cni/net.d`:
+
+| Komponente | Pfad |
+|-----------|------|
+| hostPath (Host) | `/var/lib/rancher/rke2/agent/etc/cni/net.d` ✅ |
+| Container MountPath | `/etc/cni/net.d` ❌ (sollte gleich sein) |
+| Binary schreibt nach | `/var/lib/rancher/rke2/agent/etc/cni/net.d` |
+
+Der Binary versucht in einen Container-Pfad zu schreiben, der nicht existiert.
+
+**Fix A: Patch der DaemonSet nach dem Helm install:**
+```bash
+kubectl patch ds -n kube-system kube-ovn-cni --type='json' -p='[
+  {"op": "replace",
+   "path": "/spec/template/spec/initContainers/1/volumeMounts/1/mountPath",
+   "value": "/var/lib/rancher/rke2/agent/etc/cni/net.d"}
+]'
+kubectl delete pods -n kube-system -l app=kube-ovn-cni  # force restart
+```
+
+**Fix B (Production):** Custom Helm Values-Override mit korrigierter volumeMount, oder warten auf Upstream-Fix
+([kubeovn/kube-ovn Issue](https://github.com/kubeovn/kube-ovn) öffnen wenn noch nicht gemeldet).
+
+### Problem: CNI-Verzeichnis existiert nicht (Init-Container crash)
+
+Das Verzeichnis `/var/lib/rancher/rke2/agent/etc/cni/net.d` wird von RKE2 erst erstellt,
+wenn sein eigener CNI läuft. Bei `cni: none` existiert der Pfad **nicht** → kube-ovn-cni
+kann keine conflist hineinschreiben.
+
+**Fix in cloud-init**: `mkdir -p /var/lib/rancher/rke2/agent/etc/cni/net.d` vor RKE2 start.
+Das ist bereits im `compute` Modul (`master-init.sh.tpl`, `worker-init.sh.tpl`) integriert.
+
 ## Overlay vs Underlay
 
 | | Overlay (Geneve) | Underlay (OTC VPC) |
