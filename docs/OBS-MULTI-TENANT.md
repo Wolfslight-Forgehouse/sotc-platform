@@ -207,7 +207,7 @@ spec:
     spec:
       containers:
       - name: app
-        image: nginx:alpine
+        image: traefik/whoami   # Platform-Standard für HTTP-Demos (~5 MB, no nginx)
         volumeMounts:
         - name: obs-storage
           mountPath: /data

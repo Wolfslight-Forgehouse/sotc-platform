@@ -1,11 +1,10 @@
 # GitOps Integration Guide
 
-> ⚠️ **OBSOLETE SECTIONS (2026-04-17)**: Abschnitte über `ingress-nginx` Helm-Deploy sind
-> **veraltet**. Platform-Standard ist **Traefik**. Siehe [SDE-366](https://madcluster.atlassian.net/browse/SDE-366)
-> für Refactor-Tracking. Die ArgoCD / Fleet / FluxCD Konzepte bleiben gültig — nur die
-> konkreten `ingress-nginx` Helm-Commands müssen durch Traefik-Equivalente ersetzt werden.
-
 > Wie man den Stack ohne GitHub Actions betreibt — mit Fleet, FluxCD, ArgoCD oder direkt via Helm.
+>
+> Platform-Standard für Ingress ist **Traefik**. Siehe
+> [QUICKSTART-CLI.md § Traefik Ingress](QUICKSTART-CLI.md#8-traefik-ingress-optional) und
+> [POST-INSTALL.md § Ingress (Traefik)](POST-INSTALL.md#ingress-traefik).
 
 ---
 
@@ -36,7 +35,7 @@ spec:
   paths:
     - deploy/fleet/ccm        # CCM
     - deploy/fleet/csi        # Cinder CSI + CSI-S3
-    - deploy/fleet/ingress    # ingress-nginx
+    - deploy/fleet/ingress    # Traefik (platform standard)
   targets:
     - name: production
       clusterSelector:
@@ -284,23 +283,25 @@ helm upgrade --install csi-s3 csi-s3/csi-s3 \
   --set secret.create=false \
   --set secret.name=csi-s3-secret
 
-# 4. ingress-nginx (internal + public)
-helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+# 4. Traefik Ingress (internal + public) — platform standard, nginx-free
+helm repo add traefik https://traefik.github.io/charts
 
-helm upgrade --install nginx-internal ingress-nginx/ingress-nginx \
-  -n ingress-nginx --create-namespace \
-  --set controller.ingressClassResource.name=nginx-internal \
-  --set controller.ingressClassResource.controllerValue=k8s.io/ingress-nginx-internal \
-  --set "controller.service.annotations.otc\.io/elb-virsubnet-id=$SUBNET_ID"
+helm upgrade --install traefik-internal traefik/traefik \
+  -n traefik-internal --create-namespace \
+  --set ingressClass.enabled=true \
+  --set ingressClass.name=traefik-internal \
+  --set service.type=LoadBalancer \
+  --set "service.annotations.otc\.io/elb-virsubnet-id=$SUBNET_ID"
 
-helm upgrade --install nginx-public ingress-nginx/ingress-nginx \
-  -n ingress-nginx \
-  --set controller.ingressClassResource.name=nginx-public \
-  --set controller.ingressClassResource.controllerValue=k8s.io/ingress-nginx-public \
-  --set "controller.service.annotations.otc\.io/elb-virsubnet-id=$SUBNET_ID" \
-  --set "controller.service.annotations.otc\.io/elb-eip-type=5_bgp" \
-  --set "controller.service.annotations.otc\.io/elb-eip-bandwidth-size=10" \
-  --set "controller.service.annotations.otc\.io/elb-eip-charge-mode=traffic"
+helm upgrade --install traefik-public traefik/traefik \
+  -n traefik-public --create-namespace \
+  --set ingressClass.enabled=true \
+  --set ingressClass.name=traefik-public \
+  --set service.type=LoadBalancer \
+  --set "service.annotations.otc\.io/elb-virsubnet-id=$SUBNET_ID" \
+  --set "service.annotations.otc\.io/elb-eip-type=5_bgp" \
+  --set "service.annotations.otc\.io/elb-eip-bandwidth-size=10" \
+  --set "service.annotations.otc\.io/elb-eip-charge-mode=traffic"
 ```
 
 ---

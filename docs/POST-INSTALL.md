@@ -1,11 +1,5 @@
 # Post-Installation Guide — CCM, CSI, OBS, Annotations
 
-> ⚠️ **OBSOLETE SECTIONS (2026-04-17)**: Die Ingress-Sektion dieses Dokuments zeigt
-> `nginx-internal` / `nginx-public` Ingress-Klassen — das ist **veraltet**.
-> Platform-Standard ist **Traefik**. Siehe [SDE-366](https://madcluster.atlassian.net/browse/SDE-366)
-> für den Refactor-Tracking. Das Demo-Beispiel mit `image: nginx` bleibt als technisches
-> Beispiel zulässig, aber für Production-Deployments `traefik/whoami` bevorzugen.
-
 > Nach dem Cluster-Setup: Wie man Cloud-native Features nutzt.
 
 ---
@@ -175,7 +169,7 @@ metadata:
 spec:
   containers:
     - name: app
-      image: nginx
+      image: traefik/whoami        # Platform-Standard für HTTP-Demos (~5 MB, no nginx)
       volumeMounts:
         - name: data
           mountPath: /data
@@ -257,17 +251,20 @@ reclaimPolicy: Retain        # Retain für produktive Daten!
 
 ---
 
-## Ingress (nginx-internal / nginx-public)
+## Ingress (Traefik)
+
+Platform-Standard ist **Traefik** (kein ingress-nginx). Gründe und Install-Anleitung in
+[QUICKSTART-CLI.md § Traefik Ingress](QUICKSTART-CLI.md#8-traefik-ingress-optional).
 
 ### IngressClass wählen
 
 ```bash
 kubectl get ingressclass
-# nginx-internal   k8s.io/ingress-nginx-internal   (VPC-intern)
-# nginx-public     k8s.io/ingress-nginx-public      (Internet, nur wenn ccm_elb_eip=true)
+# traefik-internal   traefik.io/ingress-controller   (VPC-intern)
+# traefik-public     traefik.io/ingress-controller   (Internet, mit EIP)
 ```
 
-### Ingress Manifest
+### Ingress Manifest (k8s-native)
 
 ```yaml
 apiVersion: networking.k8s.io/v1
@@ -275,9 +272,11 @@ kind: Ingress
 metadata:
   name: meine-app
   annotations:
-    nginx.ingress.kubernetes.io/rewrite-target: /
+    # Traefik Router Annotations (docs.traefik.io)
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+    traefik.ingress.kubernetes.io/router.tls: "false"
 spec:
-  ingressClassName: nginx-public    # oder nginx-internal
+  ingressClassName: traefik-public   # oder traefik-internal
   rules:
     - host: meine-app.example.com
       http:
@@ -290,6 +289,29 @@ spec:
                 port:
                   number: 80
 ```
+
+### IngressRoute (Traefik CRD — erweiterte Features)
+
+Für Middleware (Rate-Limits, Rewrites, Auth), Canary-Routing oder TLS mit Cert-Manager:
+
+```yaml
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: meine-app
+spec:
+  entryPoints: [web, websecure]
+  routes:
+    - match: Host(`meine-app.example.com`) && PathPrefix(`/api`)
+      kind: Rule
+      services:
+        - name: mein-service
+          port: 80
+      middlewares:
+        - name: rate-limit
+```
+
+Full reference: [Traefik Kubernetes CRD Provider](https://doc.traefik.io/traefik/routing/providers/kubernetes-crd/).
 
 ---
 

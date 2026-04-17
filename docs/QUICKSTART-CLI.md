@@ -1,10 +1,5 @@
 # Quickstart — RKE2 auf Swiss OTC via CLI (ohne GitHub Repo/Actions)
 
-> ⚠️ **OBSOLETE SECTIONS (2026-04-17)**: Die `ingress-nginx` Anleitung in diesem Dokument
-> ist **veraltet**. Platform-Standard ist jetzt **Traefik** — `ingress-nginx` wird als EOL
-> behandelt und ist in `sotc-infra` schon als `disabled_components` abgeschaltet.
-> Refactor dieses Dokuments getrackt in [SDE-366](https://madcluster.atlassian.net/browse/SDE-366).
-
 > Dieser Guide zeigt wie man den Stack komplett lokal deployed — kein GitHub Actions, kein Repo-Klon nötig.
 
 ## Voraussetzungen
@@ -84,7 +79,7 @@ rke2_token    = "$RKE2_TOKEN"
 enable_shared_elb    = true   # Pre-deployed shared ELB
 shared_elb_eip       = false  # Kein EIP (VPC-intern)
 ccm_elb_eip          = true   # CCM ELBs public
-deploy_ingress_nginx = true   # ingress-nginx deployen
+# Ingress wird separat mit Traefik deployed (siehe § 8 unten), nicht über Terraform.
 TFVARS
 
 terraform plan
@@ -175,25 +170,57 @@ for NODE_IP in $MASTER_IP $(terraform output -json worker_ips | jq -r '.[]'); do
 done
 ```
 
-## 8. ingress-nginx (optional)
+## 8. Traefik Ingress (optional)
+
+Platform-Standard ist Traefik (ingress-nginx wird nicht mehr verwendet, siehe Gotcha #8
+in der [Confluence Platform Page](https://madcluster.atlassian.net/wiki/spaces/SkyNetLabs/pages/580321282)).
 
 ```bash
-helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+helm repo add traefik https://traefik.github.io/charts
+helm repo update traefik
 
-# Intern (VPC-only)
-helm upgrade --install nginx-internal ingress-nginx/ingress-nginx \
-  -n ingress-nginx --create-namespace \
-  --set controller.ingressClassResource.name=nginx-internal \
-  --set controller.ingressClassResource.controllerValue=k8s.io/ingress-nginx-internal \
-  --set controller.service.annotations."otc\.io/elb-virsubnet-id"=$SUBNET_ID
+# Intern (VPC-only) — für Services die nur vom VPC aus erreichbar sein sollen
+helm upgrade --install traefik-internal traefik/traefik \
+  -n traefik-internal --create-namespace \
+  --set ingressClass.enabled=true \
+  --set ingressClass.name=traefik-internal \
+  --set service.type=LoadBalancer \
+  --set service.annotations."otc\.io/elb-virsubnet-id"=$SUBNET_ID
 
-# Public (mit EIP)
-helm upgrade --install nginx-public ingress-nginx/ingress-nginx \
-  -n ingress-nginx --create-namespace \
-  --set controller.ingressClassResource.name=nginx-public \
-  --set controller.ingressClassResource.controllerValue=k8s.io/ingress-nginx-public \
-  --set controller.service.annotations."otc\.io/elb-virsubnet-id"=$SUBNET_ID \
-  --set controller.service.annotations."otc\.io/elb-eip-type"=5_bgp \
-  --set controller.service.annotations."otc\.io/elb-eip-bandwidth-size"=10 \
-  --set controller.service.annotations."otc\.io/elb-eip-charge-mode"=traffic
+# Public (mit EIP) — für Services im Internet, erstellt automatisch einen OTC EIP
+helm upgrade --install traefik-public traefik/traefik \
+  -n traefik-public --create-namespace \
+  --set ingressClass.enabled=true \
+  --set ingressClass.name=traefik-public \
+  --set service.type=LoadBalancer \
+  --set service.annotations."otc\.io/elb-virsubnet-id"=$SUBNET_ID \
+  --set service.annotations."otc\.io/elb-eip-type"=5_bgp \
+  --set service.annotations."otc\.io/elb-eip-bandwidth-size"=10 \
+  --set service.annotations."otc\.io/elb-eip-charge-mode"=traffic
 ```
+
+**Ingress-Ressource mit Traefik** (k8s-native `networking.k8s.io/v1` Ingress):
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: mein-app
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+spec:
+  ingressClassName: traefik-public   # oder traefik-internal
+  rules:
+    - host: mein-app.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: mein-service
+                port: { number: 80 }
+```
+
+Für erweiterte Routing-Features (Middleware, TLS, Weighted Services) siehe Traefik's
+`IngressRoute` CRD — [Traefik Docs](https://doc.traefik.io/traefik/routing/providers/kubernetes-crd/).

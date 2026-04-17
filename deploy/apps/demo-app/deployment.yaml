@@ -1,8 +1,12 @@
-# ⚠️ TODO (SDE-367, 2026-04-17): Refactor to Traefik-compatible static server.
-# Currently uses `nginx:alpine` as static HTML server for the SkyNet Labs demo UI.
-# Platform standard is Traefik — nginx should be replaced with e.g.
-# `halverneus/static-file-server` (~10 MB, pure Go, no nginx config needed).
-# This file is DUPLICATED at `deploy/k8s/demo-app.yaml` — both need refactor.
+# SkyNet Labs Demo App — Swiss OTC Live Dashboard (Traefik-compatible)
+#
+# Uses halverneus/static-file-server (pure Go, ~10 MB) instead of nginx.
+# Platform policy: Traefik everywhere, no nginx. See SDE-366 / memory.
+#
+# Components:
+#   - static-file-server: serves index.html + obs-data/ subdir from shared volume
+#   - obs-writer (busybox): appends JSON log entries to /web/obs-data/obs-log.json
+#     which is backed by the ReadWriteMany OBS PVC → visible across pods.
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -74,10 +78,11 @@ data:
         <div class="status-line"><span class="label">CLUSTER</span><span class="value">rke2-dev · v1.34.5+rke2r1</span></div>
         <div class="status-line"><span class="label">PROVIDER</span><span class="value cyan">Swiss OTC · eu-ch2a</span></div>
         <div class="status-line"><span class="label">CLOUD CONTROLLER</span><span class="value online">● ONLINE</span></div>
+        <div class="status-line"><span class="label">STATIC SERVER</span><span class="value cyan">halverneus/static-file-server</span></div>
         <div class="status-line"><span class="label">ELB ENDPOINT</span><span class="value pink" id="eip">detecting...</span></div>
         <div class="status-line"><span class="label">NODES</span><span class="value">3 · READY</span></div>
-        <div class="status-line"><span class="label">CNI</span><span class="value cyan">Kube-OVN (Geneve)</span></div>
-        <div class="status-line"><span class="label">EVS STORAGE</span><span class="value cyan">Cinder CSI · Block RWO</span></div>
+        <div class="status-line"><span class="label">CNI</span><span class="value cyan">Cilium / Kube-OVN</span></div>
+        <div class="status-line"><span class="label">INGRESS</span><span class="value cyan">Traefik (nginx-free)</span></div>
         <div class="status-line"><span class="label">OBS STORAGE</span><span class="value online">● MOUNTED</span></div>
       </div>
 
@@ -91,7 +96,7 @@ data:
       <div class="node-id" id="uptime">INITIALIZING...</div>
     </div>
     <script>
-    // Matrix
+    // Matrix rain background
     const canvas = document.getElementById('matrix-canvas');
     const ctx = canvas.getContext('2d');
     canvas.width = window.innerWidth; canvas.height = window.innerHeight;
@@ -110,34 +115,39 @@ data:
     setInterval(drawMatrix, 45);
     window.addEventListener('resize', () => { canvas.width=window.innerWidth; canvas.height=window.innerHeight; });
 
-    // EIP detect
+    // EIP detection from OBS log (textContent only — no HTML injection)
     fetch('/obs-data/obs-log.json').then(r=>r.json()).catch(()=>null).then(d=>{
-      if(d && d.eip) document.getElementById('eip').textContent = d.eip;
-      else document.getElementById('eip').textContent = window.location.hostname;
+      document.getElementById('eip').textContent = (d && d.eip) ? d.eip : window.location.hostname;
     });
 
-    // OBS Live Log
+    // OBS Live Log — uses safe DOM creation (no innerHTML) to prevent XSS
+    // even if our own writer ever gets compromised / writes untrusted entries.
     async function loadOBSLog() {
+      const statusEl = document.getElementById('obs-status');
+      const logEl = document.getElementById('obs-log');
       try {
         const r = await fetch('/obs-data/obs-log.json?t=' + Date.now());
         if (!r.ok) throw new Error('HTTP ' + r.status);
         const data = await r.json();
-        const statusEl = document.getElementById('obs-status');
-        const logEl = document.getElementById('obs-log');
         statusEl.textContent = `Letzter Write: ${data.last_write || 'n/a'} · Writes gesamt: ${data.write_count || 0}`;
         statusEl.className = 'obs-ok';
-        logEl.innerHTML = (data.entries || []).slice(-8).reverse().map(e =>
-          `<div class="log-entry">▶ ${e}</div>`
-        ).join('');
+        // Clear + rebuild via textContent only
+        while (logEl.firstChild) logEl.removeChild(logEl.firstChild);
+        (data.entries || []).slice(-8).reverse().forEach(entry => {
+          const div = document.createElement('div');
+          div.className = 'log-entry';
+          div.textContent = '▶ ' + String(entry);
+          logEl.appendChild(div);
+        });
       } catch(e) {
-        document.getElementById('obs-status').textContent = 'OBS: ' + e.message;
-        document.getElementById('obs-status').className = 'obs-err';
+        statusEl.textContent = 'OBS: ' + e.message;
+        statusEl.className = 'obs-err';
       }
     }
     loadOBSLog();
     setInterval(loadOBSLog, 10000);
 
-    // Terminal
+    // Simulated terminal
     const lines = [
       '> kubectl get pvc -n default',
       '  demo-obs-pvc   Bound   pvc-513d...   10Gi   RWX   csi-obs',
@@ -158,7 +168,7 @@ data:
     }
     setTimeout(addLine, 800);
 
-    // Uptime
+    // Uptime counter
     const start = Date.now();
     setInterval(() => {
       const s = Math.floor((Date.now()-start)/1000);
@@ -170,19 +180,6 @@ data:
     </script>
     </body>
     </html>
-
-  nginx.conf: |
-    server {
-        listen 80;
-        root /usr/share/nginx/html;
-        index index.html;
-
-        # OBS-Daten (von gemounteter PVC)
-        location /obs-data/ {
-            alias /obs-mount/;
-            add_header Cache-Control "no-store";
-        }
-    }
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -202,76 +199,101 @@ spec:
         app: demo
     spec:
       containers:
-      - name: nginx
-        image: nginx:alpine
-        ports:
-        - containerPort: 80
-        volumeMounts:
-        - name: html
-          mountPath: /usr/share/nginx/html
-        - name: nginx-conf
-          mountPath: /etc/nginx/conf.d/default.conf
-          subPath: nginx.conf
-        - name: obs-mount
-          mountPath: /obs-mount
-      - name: obs-writer
-        image: busybox:latest
-        command: ["/bin/sh", "-c"]
-        args:
-        - |
-          COUNT=0
-          EIP=$(wget -qO- http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/null || echo "unknown")
-          mkdir -p /obs-mount
-          while true; do
-            COUNT=$((COUNT + 1))
-            TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-            NODE=$(hostname)
-            ENTRY="[$TS] write #${COUNT} from pod ${NODE}"
+        # Static file server (nginx replacement, ~10 MB pure-Go)
+        - name: static-server
+          image: halverneus/static-file-server:v1.8.12
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: FOLDER
+              value: /web
+            - name: PORT
+              value: "8080"
+            - name: URL_PREFIX
+              value: /
+            - name: CORS
+              value: "true"
+          volumeMounts:
+            # ConfigMap provides only index.html; static-file-server serves it at /
+            - name: html
+              mountPath: /web/index.html
+              subPath: index.html
+            # OBS PVC mounted as a subdir so JS `fetch('/obs-data/obs-log.json')` works
+            - name: obs-mount
+              mountPath: /web/obs-data
+          resources:
+            requests:
+              cpu: 20m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 2
+            periodSeconds: 5
 
-            # JSON log aufbauen
-            if [ -f /obs-mount/obs-log.json ]; then
-              PREV_COUNT=$(grep -o '"write_count":[0-9]*' /obs-mount/obs-log.json | grep -o '[0-9]*' || echo "0")
-              PREV_ENTRIES=$(grep -o '"entries":\[.*\]' /obs-mount/obs-log.json | sed 's/"entries":\[//;s/\]$//' || echo "")
-              COUNT=$((PREV_COUNT + 1))
-            else
-              PREV_ENTRIES=""
-              COUNT=1
-            fi
+        # OBS-Writer sidecar (unchanged): appends JSON entries every 30s
+        - name: obs-writer
+          image: busybox:1.36
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              COUNT=0
+              EIP=$(wget -qO- http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/null || echo "unknown")
+              mkdir -p /obs-mount
+              while true; do
+                COUNT=$((COUNT + 1))
+                TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+                NODE=$(hostname)
+                ENTRY="[$TS] write #${COUNT} from pod ${NODE}"
 
-            # Max 20 Entries behalten
-            NEW_ENTRIES="\"$ENTRY\""
-            if [ -n "$PREV_ENTRIES" ]; then
-              ALL="$NEW_ENTRIES,$PREV_ENTRIES"
-              # trim to 20
-              NEW_ENTRIES=$(echo "$ALL" | tr ',' '\n' | head -20 | tr '\n' ',' | sed 's/,$//')
-            fi
+                if [ -f /obs-mount/obs-log.json ]; then
+                  PREV_COUNT=$(grep -o '"write_count":[0-9]*' /obs-mount/obs-log.json | grep -o '[0-9]*' || echo "0")
+                  PREV_ENTRIES=$(grep -o '"entries":\[.*\]' /obs-mount/obs-log.json | sed 's/"entries":\[//;s/\]$//' || echo "")
+                  COUNT=$((PREV_COUNT + 1))
+                else
+                  PREV_ENTRIES=""
+                  COUNT=1
+                fi
 
-            printf '{"write_count":%d,"last_write":"%s","eip":"%s","entries":[%s]}\n' \
-              "$COUNT" "$TS" "$EIP" "$NEW_ENTRIES" > /obs-mount/obs-log.json.tmp
-            mv /obs-mount/obs-log.json.tmp /obs-mount/obs-log.json
+                NEW_ENTRIES="\"$ENTRY\""
+                if [ -n "$PREV_ENTRIES" ]; then
+                  ALL="$NEW_ENTRIES,$PREV_ENTRIES"
+                  NEW_ENTRIES=$(echo "$ALL" | tr ',' '\n' | head -20 | tr '\n' ',' | sed 's/,$//')
+                fi
 
-            echo "[$TS] OBS write #${COUNT} OK"
-            sleep 30
-          done
-        volumeMounts:
-        - name: obs-mount
-          mountPath: /obs-mount
+                printf '{"write_count":%d,"last_write":"%s","eip":"%s","entries":[%s]}\n' \
+                  "$COUNT" "$TS" "$EIP" "$NEW_ENTRIES" > /obs-mount/obs-log.json.tmp
+                mv /obs-mount/obs-log.json.tmp /obs-mount/obs-log.json
+
+                echo "[$TS] OBS write #${COUNT} OK"
+                sleep 30
+              done
+          volumeMounts:
+            - name: obs-mount
+              mountPath: /obs-mount
+          resources:
+            requests:
+              cpu: 10m
+              memory: 8Mi
+            limits:
+              cpu: 50m
+              memory: 32Mi
+
       volumes:
-      - name: html
-        configMap:
-          name: demo-html
-          items:
-          - key: index.html
-            path: index.html
-      - name: nginx-conf
-        configMap:
-          name: demo-html
-          items:
-          - key: nginx.conf
-            path: nginx.conf
-      - name: obs-mount
-        persistentVolumeClaim:
-          claimName: demo-obs-pvc
+        - name: html
+          configMap:
+            name: demo-html
+            items:
+              - key: index.html
+                path: index.html
+        - name: obs-mount
+          persistentVolumeClaim:
+            claimName: demo-obs-pvc
 ---
 apiVersion: v1
 kind: Service
@@ -279,11 +301,13 @@ metadata:
   name: demo-lb
   namespace: default
   annotations:
+    # EIP bandwidth annotation — CCM allocates public IP automatically
     otc.io/eip-bandwidth: "5"
 spec:
   type: LoadBalancer
   selector:
     app: demo
   ports:
-  - port: 80
-    targetPort: 80
+    - port: 80
+      targetPort: 8080  # halverneus/static-file-server listens on 8080
+      protocol: TCP
