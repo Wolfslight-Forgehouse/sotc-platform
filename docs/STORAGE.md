@@ -125,7 +125,7 @@ Das Upstream-Image (`cr.yandex/...`) erfordert Yandex-Auth. Wir bauen selbst:
 ```bash
 # Build & Push via GitHub Actions:
 # .github/workflows/csi-s3-build.yml
-# → ghcr.io/wolfslight-forgehouse/csi-s3-driver:latest
+# → ghcr.io/wolfslight-forgehouse/csi-s3-driver:v0.43.4
 ```
 
 ### Deployment
@@ -163,7 +163,7 @@ kubectl patch statefulset csi-s3-provisioner -n kube-system \
 images:
   registrar: registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.11.1
   provisioner: registry.k8s.io/sig-storage/csi-provisioner:v5.1.0
-  csi: ghcr.io/wolfslight-forgehouse/csi-s3-driver:latest
+  csi: ghcr.io/wolfslight-forgehouse/csi-s3-driver:v0.43.4
 
 storageClass:
   create: true

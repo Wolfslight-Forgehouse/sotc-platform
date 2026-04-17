@@ -61,9 +61,9 @@ jobs:
 
           echo ""
           echo "=== Pod-to-Pod Connectivity Test ==="
-          $K run test-a --image=busybox:latest --restart=Never \
+          $K run test-a --image=busybox:1.36 --restart=Never \
             --command -- sleep 60 2>/dev/null || true
-          $K run test-b --image=busybox:latest --restart=Never \
+          $K run test-b --image=busybox:1.36 --restart=Never \
             --command -- sleep 60 2>/dev/null || true
           sleep 12
 

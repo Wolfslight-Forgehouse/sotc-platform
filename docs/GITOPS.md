@@ -138,7 +138,7 @@ spec:
       singleBucket: rke2-obs-storage
     image:
       repository: ghcr.io/wolfslight-forgehouse/csi-s3-driver
-      tag: latest
+      tag: v0.43.4
     secret:
       create: false
       name: csi-s3-secret

@@ -43,7 +43,7 @@ Im OTC Console unter Storage → OBS → Bucket erstellen:
 GitHub Actions → ccm-build.yml → Run workflow
 ```
 
-Das baut und pushed `ghcr.io/<org>/swiss-otc-cloud-controller-manager:latest`.
+Das baut und pushed `ghcr.io/<org>/swiss-otc-cloud-controller-manager:vX.Y.Z` (+ optional `latest` als Floating-Tag). Seit v0.1.0 ist das Image als **Multi-Arch Manifest List** (amd64+arm64) published — siehe [VERSIONS.md](../VERSIONS.md).
 
 ## Schritt 4: Cluster aufbauen
 
