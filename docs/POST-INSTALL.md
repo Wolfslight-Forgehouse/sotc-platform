@@ -1,5 +1,11 @@
 # Post-Installation Guide — CCM, CSI, OBS, Annotations
 
+> ⚠️ **OBSOLETE SECTIONS (2026-04-17)**: Die Ingress-Sektion dieses Dokuments zeigt
+> `nginx-internal` / `nginx-public` Ingress-Klassen — das ist **veraltet**.
+> Platform-Standard ist **Traefik**. Siehe [SDE-366](https://madcluster.atlassian.net/browse/SDE-366)
+> für den Refactor-Tracking. Das Demo-Beispiel mit `image: nginx` bleibt als technisches
+> Beispiel zulässig, aber für Production-Deployments `traefik/whoami` bevorzugen.
+
 > Nach dem Cluster-Setup: Wie man Cloud-native Features nutzt.
 
 ---

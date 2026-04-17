@@ -1,5 +1,10 @@
 # Quickstart — RKE2 auf Swiss OTC via CLI (ohne GitHub Repo/Actions)
 
+> ⚠️ **OBSOLETE SECTIONS (2026-04-17)**: Die `ingress-nginx` Anleitung in diesem Dokument
+> ist **veraltet**. Platform-Standard ist jetzt **Traefik** — `ingress-nginx` wird als EOL
+> behandelt und ist in `sotc-infra` schon als `disabled_components` abgeschaltet.
+> Refactor dieses Dokuments getrackt in [SDE-366](https://madcluster.atlassian.net/browse/SDE-366).
+
 > Dieser Guide zeigt wie man den Stack komplett lokal deployed — kein GitHub Actions, kein Repo-Klon nötig.
 
 ## Voraussetzungen

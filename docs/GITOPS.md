@@ -1,5 +1,10 @@
 # GitOps Integration Guide
 
+> ⚠️ **OBSOLETE SECTIONS (2026-04-17)**: Abschnitte über `ingress-nginx` Helm-Deploy sind
+> **veraltet**. Platform-Standard ist **Traefik**. Siehe [SDE-366](https://madcluster.atlassian.net/browse/SDE-366)
+> für Refactor-Tracking. Die ArgoCD / Fleet / FluxCD Konzepte bleiben gültig — nur die
+> konkreten `ingress-nginx` Helm-Commands müssen durch Traefik-Equivalente ersetzt werden.
+
 > Wie man den Stack ohne GitHub Actions betreibt — mit Fleet, FluxCD, ArgoCD oder direkt via Helm.
 
 ---

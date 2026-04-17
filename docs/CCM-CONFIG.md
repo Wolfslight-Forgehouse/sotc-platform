@@ -108,28 +108,34 @@ Terraform and `subnet_id` in CCM) feels like the mapping, but that's exactly the
 
 ## How to Verify
 
-After deploying the CCM with this cloud-config, create a test `Service type:LoadBalancer`:
+After deploying the CCM with this cloud-config, create a test `Service type:LoadBalancer`.
+
+**Note on images**: We use [`traefik/whoami`](https://hub.docker.com/r/traefik/whoami) for demo
+pods throughout this platform — it's a ~5 MB container that echoes request metadata on port 80,
+perfect for LB testing. The platform has standardized on Traefik (see
+[ADR / team preference](ARCHITECTURE.md)): `ingress-nginx` is disabled by default in the
+cloud-init (`disabled_components` in the compute module), so don't use `nginx`-based examples.
 
 ```bash
-kubectl create deployment nginx-demo --image=nginx:alpine --replicas=2
-kubectl expose deployment nginx-demo --type=LoadBalancer --port=80
+kubectl create deployment whoami --image=traefik/whoami --replicas=2
+kubectl expose deployment whoami --type=LoadBalancer --port=80
 ```
 
 Within ~15 seconds you should see an `EXTERNAL-IP` assigned:
 
 ```
-$ kubectl get svc nginx-demo
-NAME         TYPE           CLUSTER-IP     EXTERNAL-IP   PORT(S)        AGE
-nginx-demo   LoadBalancer   10.43.171.55   10.0.1.169    80:31684/TCP   10s
+$ kubectl get svc whoami
+NAME     TYPE           CLUSTER-IP     EXTERNAL-IP   PORT(S)        AGE
+whoami   LoadBalancer   10.43.171.55   10.0.1.169    80:31684/TCP   10s
 ```
 
 The CCM logs will show the happy path:
 
 ```
-Creating new LoadBalancer name="k8s-kubernetes-default-nginx-demo"
-Pool created id="..." name="k8s-kubernetes-default-nginx-demo-pool-80"
+Creating new LoadBalancer name="k8s-kubernetes-default-whoami"
+Pool created id="..." name="k8s-kubernetes-default-whoami-pool-80"
 Member added ip="10.0.1.87" port=31684
-Listener created name="k8s-kubernetes-default-nginx-demo-listener-80" port=80
+Listener created name="k8s-kubernetes-default-whoami-listener-80" port=80
 EnsuredLoadBalancer Ensured load balancer
 ```
 

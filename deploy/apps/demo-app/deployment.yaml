@@ -1,3 +1,8 @@
+# ⚠️ TODO (SDE-367, 2026-04-17): Refactor to Traefik-compatible static server.
+# Currently uses `nginx:alpine` as static HTML server for the SkyNet Labs demo UI.
+# Platform standard is Traefik — nginx should be replaced with e.g.
+# `halverneus/static-file-server` (~10 MB, pure Go, no nginx config needed).
+# This file is DUPLICATED at `deploy/k8s/demo-app.yaml` — both need refactor.
 ---
 apiVersion: v1
 kind: ConfigMap
