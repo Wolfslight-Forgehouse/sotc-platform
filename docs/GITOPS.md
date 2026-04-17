@@ -299,9 +299,9 @@ helm upgrade --install traefik-public traefik/traefik \
   --set ingressClass.name=traefik-public \
   --set service.type=LoadBalancer \
   --set "service.annotations.otc\.io/elb-virsubnet-id=$SUBNET_ID" \
-  --set "service.annotations.otc\.io/elb-eip-type=5_bgp" \
-  --set "service.annotations.otc\.io/elb-eip-bandwidth-size=10" \
-  --set "service.annotations.otc\.io/elb-eip-charge-mode=traffic"
+  --set "service.annotations.otc\.io/eip-bandwidth=10"
+# Note: CCM v0.1.0 liest nur `otc.io/eip-bandwidth` — Type/charge-mode/bandwidth-name
+# sind hardcoded auf OTC-Defaults (5_bgp, traffic). Siehe SDE-393.
 ```
 
 ---

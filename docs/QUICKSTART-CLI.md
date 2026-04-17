@@ -188,15 +188,15 @@ helm upgrade --install traefik-internal traefik/traefik \
   --set service.annotations."otc\.io/elb-virsubnet-id"=$SUBNET_ID
 
 # Public (mit EIP) — für Services im Internet, erstellt automatisch einen OTC EIP
+# Wichtig: CCM v0.1.0 liest NUR `otc.io/eip-bandwidth` (Mbps Integer). Type, charge-mode
+# und bandwidth-name sind hardcoded auf OTC-Defaults (5_bgp + traffic). Siehe SDE-393.
 helm upgrade --install traefik-public traefik/traefik \
   -n traefik-public --create-namespace \
   --set ingressClass.enabled=true \
   --set ingressClass.name=traefik-public \
   --set service.type=LoadBalancer \
   --set service.annotations."otc\.io/elb-virsubnet-id"=$SUBNET_ID \
-  --set service.annotations."otc\.io/elb-eip-type"=5_bgp \
-  --set service.annotations."otc\.io/elb-eip-bandwidth-size"=10 \
-  --set service.annotations."otc\.io/elb-eip-charge-mode"=traffic
+  --set service.annotations."otc\.io/eip-bandwidth"=10
 ```
 
 **Ingress-Ressource mit Traefik** (k8s-native `networking.k8s.io/v1` Ingress):

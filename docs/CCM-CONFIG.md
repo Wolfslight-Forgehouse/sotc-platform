@@ -168,9 +168,69 @@ We explicitly chose **not** to:
 Instead we added **inline Godoc warnings** at the struct definition and at both getter
 functions in `loadbalancer.go`, plus the Helm `values.yaml` has the mapping table.
 
+## EIP Annotations
+
+When a Service needs a **public EIP** in addition to the internal ELB VIP, only **one**
+annotation is actually read by the CCM v0.1.0 code:
+
+```yaml
+metadata:
+  annotations:
+    otc.io/eip-bandwidth: "10"   # Mbps integer — 0 or missing = no EIP
+```
+
+### What the Code Does
+
+From `pkg/opentelekomcloud/loadbalancer/loadbalancer.go` line ~110:
+
+```go
+if bwStr, ok := service.Annotations["otc.io/eip-bandwidth"]; ok {
+    if bw, err := strconv.Atoi(bwStr); err == nil && bw > 0 {
+        eipBandwidth = bw
+    }
+}
+loadBalancer, err = lb.client.CreateLoadBalancer(ctx, createReq, eipBandwidth)
+```
+
+On `CreateLoadBalancer` with `eipBandwidth > 0`, the CCM:
+
+1. Creates the ELB + Listener + Pool (internal VIP)
+2. Allocates an EIP via `POST /v1/publicips` with hardcoded defaults:
+   - **Type**: `5_bgp`
+   - **Charge mode**: `traffic`
+   - **Bandwidth name**: auto-generated from LoadBalancer ID
+3. Associates the EIP with the ELB's `vip_port_id`
+4. Updates `service.status.loadBalancer.ingress[0].ip` to the EIP (not the VIP anymore)
+
+### What the Code Does NOT Do
+
+These annotations from older docs (`POST-INSTALL.md` pre-2026-04-18) are **ignored**:
+
+- `otc.io/elb-eip-type`
+- `otc.io/elb-eip-bandwidth-name`
+- `otc.io/elb-eip-bandwidth-size`
+- `otc.io/elb-eip-charge-mode`
+
+If you need non-default EIP settings (e.g. pre-paid bandwidth, named bandwidth group,
+shared EIP pool), you must currently either:
+
+- **Pre-allocate** the EIP via Terraform / OTC Console, then let the CCM just associate it
+- **Extend** the CCM to read additional annotations (see [SDE-393](https://madcluster.atlassian.net/browse/SDE-393))
+
+### Other Supported Annotations
+
+| Annotation | Effect |
+|------------|--------|
+| `otc.io/eip-bandwidth` | EIP bandwidth in Mbps (as described above) |
+| `otc.io/allowed-cidrs` | Comma-separated CIDRs — CCM adds matching SG rules |
+| `otc.io/subnet-cidr-id` | Override VIP subnet (Neutron Network ID) |
+| `otc.io/subnet-id` | Legacy alias for `otc.io/subnet-cidr-id` |
+| `otc.io/elb-virsubnet-id` | Override `elb_virsubnet_ids` (VPC Subnet UUID) |
+
 ## See Also
 
 - [SDE-361 — Subnet-ID Naming Mismatch](https://madcluster.atlassian.net/browse/SDE-361)
+- [SDE-393 — EIP Annotation Gap](https://madcluster.atlassian.net/browse/SDE-393)
 - [sotc-cloud-manager: pkg/opentelekomcloud/config/config.go](https://github.com/Wolfslight-Forgehouse/sotc-cloud-manager/blob/main/pkg/opentelekomcloud/config/config.go) — inline Godoc warning
-- [sotc-cloud-manager: helm/otc-cloud-manager/values.yaml](https://github.com/Wolfslight-Forgehouse/sotc-cloud-manager/blob/main/helm/otc-cloud-manager/values.yaml) — mapping table in comments
+- [sotc-cloud-manager: pkg/opentelekomcloud/loadbalancer/loadbalancer.go](https://github.com/Wolfslight-Forgehouse/sotc-cloud-manager/blob/main/pkg/opentelekomcloud/loadbalancer/loadbalancer.go) — annotation handling
 - [docs/ARCHITECTURE.md § OTC-Gotchas](ARCHITECTURE.md) — Gotcha #2 and #8 for the full picture

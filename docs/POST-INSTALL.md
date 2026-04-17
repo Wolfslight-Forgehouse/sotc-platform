@@ -50,18 +50,32 @@ kubernetes.io/elb.id: "<elb-id>"
 ```
 
 #### EIP (öffentliche IP)
+
+> **Wichtig** — nur **eine** Annotation wird tatsächlich vom CCM v0.1.0 ausgewertet:
+> `otc.io/eip-bandwidth`. Der einfache Integer-Wert triggert automatische EIP-Allokation
+> mit OTC-Defaults (`5_bgp`, `traffic`-basiertes Charging, System-Bandwidth-Name).
+> Details + Rationale: [docs/CCM-CONFIG.md](./CCM-CONFIG.md#eip-annotations), [SDE-393](https://madcluster.atlassian.net/browse/SDE-393).
+
 ```yaml
-# EIP automatisch erstellen und binden
-otc.io/elb-eip-type: "5_bgp"                    # IP-Typ (5_bgp = Standard)
-otc.io/elb-eip-bandwidth-name: "mein-service-bw"
-otc.io/elb-eip-bandwidth-size: "10"              # Mbps
-otc.io/elb-eip-charge-mode: "traffic"            # traffic | bandwidth
+# EIP automatisch erstellen und binden (einzige unterstützte Annotation)
+otc.io/eip-bandwidth: "5"              # Mbps — 0 oder weglassen = nur interne VIP
 ```
+
+`otc.io/elb-eip-*` Annotations (type, bandwidth-name, charge-mode) aus älterer Doku
+werden vom CCM v0.1.0 **nicht gelesen**. Defaults sind hardcoded — falls individuelle
+Bandbreiten-Namen oder Charge-Modes gewünscht, sind die über den CCM Code zu erweitern
+(siehe SDE-393 Nachfolge-Tickets).
 
 #### Health Check
 ```yaml
 otc.io/elb-health-check-flag: "on"
 otc.io/elb-health-check-option: '{"protocol":"TCP","interval":5,"timeout":3,"unhealthy_threshold":3}'
+```
+
+#### Security (allowed CIDRs)
+```yaml
+# Beschränke Zugriff auf bestimmte Source-IP-Ranges
+otc.io/allowed-cidrs: "10.0.0.0/8,192.168.1.0/24"
 ```
 
 #### Vollständiges Beispiel (public Service mit EIP)
@@ -72,10 +86,7 @@ metadata:
   name: webapp-public
   annotations:
     otc.io/elb-virsubnet-id: "8d1936fa-6a47-4435-8d4d-c691cdf24eb7"
-    otc.io/elb-eip-type: "5_bgp"
-    otc.io/elb-eip-bandwidth-name: "webapp-bw"
-    otc.io/elb-eip-bandwidth-size: "10"
-    otc.io/elb-eip-charge-mode: "traffic"
+    otc.io/eip-bandwidth: "10"         # 10 Mbps EIP, automatisch mit 5_bgp + traffic-mode
 spec:
   type: LoadBalancer
   selector:
